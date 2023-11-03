@@ -1,4 +1,4 @@
-package infra
+package messaging
 
 import (
 	"github.com/nats-io/nats.go"
