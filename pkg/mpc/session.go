@@ -9,6 +9,7 @@ import (
 	"github.com/bnb-chain/tss-lib/tss"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/fatih/color"
 
 	"github.com/rs/zerolog/log"
 )
@@ -105,13 +106,13 @@ func (s *Session) Init() error {
 		fmt.Printf("nodeID is ready = %+v\n", nodeID)
 	}
 
-	log.Info().Msg("All parties are ready")
+	color.Cyan("All parties are ready")
 
 	return nil
 }
 
 func (s *Session) composeTargetID(nodeID string) string {
-	return fmt.Sprintf("%s-%s", s.walletID, nodeID)
+	return fmt.Sprintf("%s/%s", s.walletID, nodeID)
 }
 
 func (s *Session) handleMessage(keyshare tss.Message) {
@@ -133,16 +134,22 @@ func (s *Session) handleMessage(keyshare tss.Message) {
 	fmt.Printf("walletID: %s\n", s.walletID)
 
 	if routing.IsBroadcast && len(routing.To) == 0 {
+		fmt.Println("[Routing] to == 0", routing)
+		fmt.Println("Publishing to topic", s.walletID)
 		err := s.pubSub.Publish(s.walletID, msg)
 		if err != nil {
 			s.ErrCh <- err
 			return
 		}
 	} else {
+		fmt.Println("[Routing] to > 0", routing)
 		for _, to := range routing.To {
 			nodeID := PartyIDToNodeID(to)
+			fmt.Printf("[Topic]: %s\n", s.composeTargetID(nodeID))
+			color.Cyan("Sending message to topic", s.composeTargetID(nodeID))
 			err := s.direct.Send(s.composeTargetID(nodeID), msg)
 			if err != nil {
+				color.Red(err.Error())
 				s.ErrCh <- err
 			}
 
@@ -153,7 +160,6 @@ func (s *Session) handleMessage(keyshare tss.Message) {
 
 func (s *Session) GenerateKey() {
 	fmt.Println("Waiting all parties to be ready")
-	<-s.readyCh
 	fmt.Println("All parties are ready, start generating key")
 
 	go func() {
@@ -166,7 +172,8 @@ func (s *Session) GenerateKey() {
 	for {
 		select {
 		case msg := <-s.outCh:
-			fmt.Printf("msg = %+v\n", msg)
+			blue := color.New(color.FgBlue)
+			blue.Printf("Received message from %v\n", msg)
 			s.handleMessage(msg)
 		case saveData := <-s.endCh:
 
@@ -195,8 +202,12 @@ func (s *Session) ListenToIncomingMessage() {
 
 	}()
 
-	nodeID := s.mapPartyIdToNodeId[s.selfPartyID.String()]
-	s.direct.Listen(s.composeTargetID(nodeID), func(msg []byte) {
+	nodeID := PartyIDToNodeID(s.selfPartyID)
+	fmt.Println("Listening on target topic", s.composeTargetID(nodeID))
+
+	targetID := s.composeTargetID(nodeID)
+	s.direct.Listen(targetID, func(msg []byte) {
+		color.Cyan("Received message from direct channel", targetID)
 		s.receiveMessage(msg)
 	})
 
@@ -204,6 +215,7 @@ func (s *Session) ListenToIncomingMessage() {
 
 func (s *Session) receiveMessage(rawMsg []byte) {
 	fmt.Println("receive message")
+	blue := color.New(color.FgGreen)
 	msg, err := UnmarshalTssMessage(rawMsg)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to unmarshal message")
@@ -211,12 +223,22 @@ func (s *Session) receiveMessage(rawMsg []byte) {
 		return
 	}
 
+	blue.Printf("from = %+v, to = %+v\n", msg.From, msg.To)
+	blue.Printf("Party ID %v\n", s.party)
+
 	isBroadcast := msg.IsBroadcast && len(msg.To) == 0
-	isToSelf := len(msg.To) == 1 && msg.To[0].Id == s.selfPartyID.Id
+	isToSelf := len(msg.To) == 1 && ArePartyIDsEqual(msg.To[0], s.selfPartyID)
+
+	fmt.Printf("isBroadcast = %+v, isToSelf =%+v\n", isBroadcast, isToSelf)
 
 	if isBroadcast || isToSelf {
 		go func() {
-			fmt.Println("SHOULD UPDATE myself")
+			if isBroadcast {
+				fmt.Println("UPDATE BROADCAST MESSAGE", msg.To)
+			} else if isToSelf {
+				fmt.Println("UPDATE MESSAGE FOR ME", msg.To)
+
+			}
 			ok, err := s.party.UpdateFromBytes(msg.MsgBytes, msg.From, msg.IsBroadcast)
 			if !ok || err != nil {
 				fmt.Printf("err = %+v\n", err)

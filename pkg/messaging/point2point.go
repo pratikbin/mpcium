@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/nats-io/nats.go"
 )
 
@@ -14,19 +15,17 @@ type DirectMessaging interface {
 
 type natsDirectMessaging struct {
 	natsConn *nats.Conn
-	ch       chan []byte
 }
 
 func NewNatsDirectMessaging(natsConn *nats.Conn) DirectMessaging {
 	return &natsDirectMessaging{
 		natsConn: natsConn,
-		ch:       make(chan []byte),
 	}
 }
 
 func (d *natsDirectMessaging) Send(id string, message []byte) error {
-	fmt.Println("SEND DIRECT REQUEST", id)
-	msg, err := d.natsConn.Request(id, message, time.Second)
+	color.Green("SEND DIRECT REQUEST", id)
+	msg, err := d.natsConn.Request(id, message, 1*time.Second)
 	if err != nil {
 		return err
 	}
@@ -36,7 +35,7 @@ func (d *natsDirectMessaging) Send(id string, message []byte) error {
 
 func (d *natsDirectMessaging) Listen(id string, handler func(data []byte)) error {
 	_, err := d.natsConn.Subscribe(id, func(m *nats.Msg) {
-		d.ch <- m.Data
+		color.Yellow("RECEIVE DIRECT REQUEST", id)
 		handler(m.Data)
 		m.Respond([]byte("OK"))
 	})

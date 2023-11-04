@@ -5,6 +5,7 @@ go 1.21.0
 require (
 	github.com/bnb-chain/tss-lib v1.5.0
 	github.com/ethereum/go-ethereum v1.13.4
+	github.com/fatih/color v1.15.0
 	github.com/google/uuid v1.4.0
 	github.com/hashicorp/consul/api v1.26.1
 	github.com/nats-io/nats.go v1.31.0
@@ -21,7 +22,6 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
-	github.com/fatih/color v1.15.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
