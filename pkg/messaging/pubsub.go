@@ -20,7 +20,6 @@ func NewNATSPubSub(natsConn *nats.Conn) PubSub {
 
 func (n *natsPubSub) Publish(topic string, message []byte) error {
 	log.Info().Msgf("Publishing to topic %s", topic)
-	log.Info().Msgf("Message: %s", string(message))
 	return n.natsConn.Publish(topic, message)
 }
 

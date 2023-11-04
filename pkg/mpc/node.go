@@ -1,6 +1,8 @@
 package mpc
 
 import (
+	"bytes"
+	"fmt"
 	"math/big"
 
 	"github.com/bnb-chain/tss-lib/tss"
@@ -24,6 +26,15 @@ func CreatePartyID(nodeID string, label string) *tss.PartyID {
 	return tss.NewPartyID(partyID, label, key)
 }
 
+func PartyIDToNodeID(partyID *tss.PartyID) string {
+	return string(partyID.KeyInt().Bytes())
+}
+
+func ArePartyIDsEqual(partyID1, partyID2 *tss.PartyID) bool {
+	return bytes.Equal(partyID1.KeyInt().Bytes(), partyID2.KeyInt().Bytes())
+
+}
+
 func NewNode(
 	nodeID string,
 	peerIDs []string,
@@ -42,9 +53,11 @@ func (p *Node) ID() string {
 	return p.nodeID
 }
 
-func (p *Node) CreateKeyGenSession() (*Session, error) { // generate pre params
+func (p *Node) CreateKeyGenSession(walletID string, threshold int) (*Session, error) { // generate pre params
 	var selfPartyID *tss.PartyID
 	partyIDs := make([]*tss.PartyID, len(p.peerIDs))
+
+	mapPartyIdToNodeId := make(map[string]string)
 
 	for i, peerID := range p.peerIDs {
 		if peerID == p.nodeID {
@@ -55,13 +68,19 @@ func (p *Node) CreateKeyGenSession() (*Session, error) { // generate pre params
 			partyIDs[i] = CreatePartyID(peerID, "keygen")
 		}
 	}
+	fmt.Printf("selfPartyID = %+v\n", selfPartyID)
 
 	sortedPartyIds := tss.SortPartyIDs(partyIDs, 0)
 
-	session := &Session{
-		selfPartyID: selfPartyID,
-		partyIDs:    sortedPartyIds,
-	}
+	session := NewSession(
+		walletID,
+		p.pubSub,
+		p.direct,
+		selfPartyID,
+		sortedPartyIds,
+		threshold,
+		mapPartyIdToNodeId,
+	)
 
 	return session, nil
 }

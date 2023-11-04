@@ -17,7 +17,7 @@ type natsDirectMessaging struct {
 	ch       chan []byte
 }
 
-func newNatsDirectMessaging(natsConn *nats.Conn) DirectMessaging {
+func NewNatsDirectMessaging(natsConn *nats.Conn) DirectMessaging {
 	return &natsDirectMessaging{
 		natsConn: natsConn,
 		ch:       make(chan []byte),
@@ -25,6 +25,7 @@ func newNatsDirectMessaging(natsConn *nats.Conn) DirectMessaging {
 }
 
 func (d *natsDirectMessaging) Send(id string, message []byte) error {
+	fmt.Println("SEND DIRECT REQUEST", id)
 	msg, err := d.natsConn.Request(id, message, time.Second)
 	if err != nil {
 		return err

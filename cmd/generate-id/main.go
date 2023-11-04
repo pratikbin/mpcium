@@ -67,7 +67,7 @@ func loadPeersFromConsul(kv *api.KV, prefix string) ([]string, error) {
 	return peers, nil
 }
 
-func storePeersToJSON(peers []string) {
+func storePeersToJSON(peers any) {
 	// Encode the peers to JSON
 	peersJSON, err := json.MarshalIndent(peers, "", "  ")
 	if err != nil {
@@ -134,11 +134,13 @@ func main() {
 
 			// Store node IDs with the "peers" prefix
 
-			var keys []string
+			pairs := make(map[string]string)
 			for id, nodeID := range nodeIDs {
-				key := fmt.Sprintf("%snode%d-%s", prefix, id, nodeID)
-				p := &api.KVPair{Key: key, Value: []byte("ok")}
-				keys = append(keys, fmt.Sprintf("%d-%s", id, nodeID))
+				key := fmt.Sprintf("%snode%d", prefix, id)
+				p := &api.KVPair{Key: key, Value: []byte(nodeID)}
+
+				pairs[fmt.Sprintf("node%d", id)] = nodeID
+
 				// Store the key-value pair
 				_, err := kv.Put(p, nil)
 				if err != nil {
@@ -148,7 +150,7 @@ func main() {
 				}
 			}
 
-			storePeersToJSON(keys)
+			storePeersToJSON(pairs)
 
 		}
 

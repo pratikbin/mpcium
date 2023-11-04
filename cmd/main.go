@@ -1,26 +1,65 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/cryptoniumX/mpcium/pkg/config"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
+	"github.com/cryptoniumX/mpcium/pkg/mpc"
+	"github.com/hashicorp/consul/api"
 	"github.com/nats-io/nats.go"
 )
 
 func main() {
-	natsConn, err := nats.Connect(nats.DefaultURL)
+	nodeName := flag.String("name", "", "Node name")
+	flag.Parse()
+
+	if *nodeName == "" {
+		log.Fatal("Name is required")
+	}
+
+	// Create a new Consul client
+	client, err := api.NewClient(api.DefaultConfig())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create a Key-Value store client
+	kv := client.KV()
+	peers, err := config.LoadPeersFromConsul(kv, "mpc-peers/")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	nodeID := config.GetNodeID(*nodeName, peers)
+	if nodeID == "" {
+		log.Fatal("Node not found")
+	}
+
+	fmt.Printf("NODE ID is running = %+v\n", nodeID)
+	natsConn, err := nats.Connect(nats.DefaultURL, nats.Name("Nats NoEcho"), nats.NoEcho())
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	natsPubSub := messaging.NewNATSPubSub(natsConn)
-	handler(natsPubSub)
+	directMessaging := messaging.NewNatsDirectMessaging(natsConn)
 
 	defer natsConn.Close()
+
+	var peersIDs []string
+	for _, peer := range peers {
+		peersIDs = append(peersIDs, peer.ID)
+	}
+
+	mpcNode := mpc.NewNode(nodeID, peersIDs, natsPubSub, directMessaging)
+
+	handler(natsPubSub, mpcNode)
 
 	go func() {
 		select {}
@@ -28,6 +67,7 @@ func main() {
 	}()
 
 	// Create a channel to receive signals
+
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
@@ -36,10 +76,37 @@ func main() {
 
 }
 
-func handler(pubsub messaging.PubSub) {
+func handler(pubsub messaging.PubSub, mpcNode *mpc.Node) {
 	fmt.Println("Subscribing to topic 'mpc:generate'")
-	// ...
 	pubsub.Subscribe("mpc:generate", func(msg []byte) {
 		fmt.Printf("msg = %+v\n", string(msg))
+
+		walletID := string(msg)
+		threshold := 3
+		session, err := mpcNode.CreateKeyGenSession(walletID, threshold)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Printf("session = %+v\n", session)
+
+		err = session.Init()
+		if err != nil {
+			log.Fatal(err)
+		}
+		go func() {
+			for {
+				select {
+				case err := <-session.ErrCh:
+					fmt.Printf("err = %+v\n", err)
+
+				}
+			}
+
+		}()
+
+		go session.GenerateKey()
+		session.ListenToIncomingMessage()
+
 	})
 }
