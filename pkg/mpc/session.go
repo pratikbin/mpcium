@@ -71,27 +71,20 @@ func (s *Session) PartyCount() int {
 	return len(s.partyIDs)
 }
 
-func (s *Session) composeReadyTopic(nodeID string) string {
-	return fmt.Sprintf("%s-%s-%s", s.walletID, nodeID, "ready")
+func (s *Session) composeReadyTopic() string {
+	return fmt.Sprintf("%s-%s", s.walletID, "ready")
 }
 
 func (s *Session) Init() error {
-	for _, partyID := range s.partyIDs {
-		if ArePartyIDsEqual(partyID, s.selfPartyID) {
-			continue
-		}
-
-		go func(partyID *tss.PartyID) {
-			topic := s.composeReadyTopic(PartyIDToNodeID(partyID))
-			fmt.Println("Subscribing to topic", topic)
-			s.pubSub.Subscribe(topic, func(data []byte) {
-				fmt.Printf("string(data) = %+v\n", string(data))
-				log.Info().Msgf("Received ready message for %s from %s", topic, string(data))
-				s.readyCh <- PartyIDToNodeID(partyID)
-			})
-		}(partyID)
-
-	}
+	go func() {
+		topic := s.composeReadyTopic()
+		fmt.Println("Subscribing to topic", topic)
+		s.pubSub.Subscribe(topic, func(data []byte) {
+			fmt.Printf("string(data) = %+v\n", string(data))
+			log.Info().Msgf("Received ready message for %s from %s", topic, string(data))
+			s.readyCh <- string(data)
+		})
+	}()
 
 	preParams, err := keygen.GeneratePreParams(1 * time.Minute)
 	if err != nil {
@@ -104,7 +97,7 @@ func (s *Session) Init() error {
 	s.party = keygen.NewLocalParty(params, s.outCh, s.endCh, *preParams)
 	log.Info().Msg("Initialized session successfully")
 
-	s.pubSub.Publish(s.composeReadyTopic(PartyIDToNodeID(s.selfPartyID)), []byte(PartyIDToNodeID(s.selfPartyID)))
+	s.pubSub.Publish(s.composeReadyTopic(), []byte(PartyIDToNodeID(s.selfPartyID)))
 	s.readyCh <- PartyIDToNodeID(s.selfPartyID)
 
 	for i := 0; i < len(s.partyIDs); i++ {
