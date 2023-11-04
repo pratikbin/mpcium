@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/cryptoniumX/mpcium/pkg/infra"
+	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/nats-io/nats.go"
 )
 
@@ -17,7 +17,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	natsPubSub := infra.NewNATSPubSub(natsConn)
+	natsPubSub := messaging.NewNATSPubSub(natsConn)
 	handler(natsPubSub)
 
 	defer natsConn.Close()
@@ -36,7 +36,7 @@ func main() {
 
 }
 
-func handler(pubsub infra.PubSub) {
+func handler(pubsub messaging.PubSub) {
 	fmt.Println("Subscribing to topic 'mpc:generate'")
 	// ...
 	pubsub.Subscribe("mpc:generate", func(msg []byte) {
