@@ -2,6 +2,7 @@ package mpc
 
 import (
 	"crypto/ecdsa"
+	"encoding/json"
 	"fmt"
 
 	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
@@ -10,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/cryptoniumX/mpcium/pkg/addr"
+	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -38,6 +40,7 @@ type Session struct {
 	// its ready when alls party emit ready
 	readyCh   chan string
 	preParams *keygen.LocalPreParams
+	kvstore   kvstore.KVStore
 }
 
 func NewSession(
@@ -49,6 +52,7 @@ func NewSession(
 	threshold int,
 	mapPartyIdToNodeId map[string]string,
 	preParams *keygen.LocalPreParams,
+	kvstore kvstore.KVStore,
 ) *Session {
 	return &Session{
 		walletID:           walletID,
@@ -63,6 +67,7 @@ func NewSession(
 		readyCh:            make(chan string, 3),
 		mapPartyIdToNodeId: mapPartyIdToNodeId,
 		preParams:          preParams,
+		kvstore:            kvstore,
 	}
 }
 
@@ -182,6 +187,13 @@ func (s *Session) GenerateKey() {
 			blue.Printf("Received message from %v\n", msg)
 			s.handleMessage(msg)
 		case saveData := <-s.endCh:
+			keyBytes, err := json.Marshal(saveData)
+			if err != nil {
+				s.ErrCh <- err
+			}
+
+			s.kvstore.Put(s.walletID, keyBytes)
+
 			publicKey := saveData.ECDSAPub
 			pubKey := &ecdsa.PublicKey{
 				Curve: publicKey.Curve(),
@@ -230,6 +242,20 @@ func (s *Session) GenerateKey() {
 			fmt.Println("Bitcoin Address P2PKH:", btcAddress.EncodeAddress())
 			fmt.Println("Bitcoin Address Bech32:", bech32Addr)
 			fmt.Println("Bitcoin Address P2SH:", p2shAddr)
+
+			val, err := s.kvstore.Get(s.walletID)
+			if err != nil {
+				logger.Error("failed to get key from kvstore", err)
+			}
+
+			var data keygen.LocalPartySaveData
+
+			err = json.Unmarshal(val, &data)
+			if err != nil {
+				panic(err)
+			}
+
+			logger.Info("Get key from badger", "key", s.walletID, "data", data)
 		}
 
 	}

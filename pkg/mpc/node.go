@@ -8,6 +8,7 @@ import (
 
 	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/google/uuid"
@@ -21,6 +22,7 @@ type Node struct {
 
 	pubSub    messaging.PubSub
 	direct    messaging.DirectMessaging
+	kvstore   kvstore.KVStore
 	preParams *keygen.LocalPreParams
 
 	peerReadyCh chan struct{}
@@ -47,6 +49,7 @@ func NewNode(
 	peerIDs []string,
 	pubSub messaging.PubSub,
 	direct messaging.DirectMessaging,
+	kvstore kvstore.KVStore,
 ) *Node {
 	peerReadyCh := make(chan struct{}, len(peerIDs)-1)
 	for _, peerID := range peerIDs {
@@ -76,6 +79,7 @@ func NewNode(
 		peerIDs:     peerIDs,
 		pubSub:      pubSub,
 		direct:      direct,
+		kvstore:     kvstore,
 		preParams:   preParams,
 		peerReadyCh: peerReadyCh,
 		readyCh:     make(chan struct{}),
@@ -132,6 +136,7 @@ func (p *Node) CreateKeyGenSession(walletID string, threshold int) (*Session, er
 		threshold,
 		mapPartyIdToNodeId,
 		p.preParams,
+		p.kvstore,
 	)
 
 	return session, nil

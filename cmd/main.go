@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog/pkgerrors"
 
 	"github.com/cryptoniumX/mpcium/pkg/config"
+	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/cryptoniumX/mpcium/pkg/mpc"
@@ -34,6 +35,15 @@ func main() {
 	client, err := api.NewClient(api.DefaultConfig())
 	if err != nil {
 		log.Error().Err(err)
+	}
+
+	badgerKv, err := kvstore.NewBadgerKVStore(
+		fmt.Sprintf("./db/%s", *nodeName),
+		[]byte("1JwFmsc9lxlLfkPl"),
+	)
+
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create badger kv store")
 	}
 
 	// Create a Key-Value store client
@@ -67,7 +77,13 @@ func main() {
 		peersIDs = append(peersIDs, peer.ID)
 	}
 
-	mpcNode := mpc.NewNode(nodeID, peersIDs, natsPubSub, directMessaging)
+	mpcNode := mpc.NewNode(
+		nodeID,
+		peersIDs,
+		natsPubSub,
+		directMessaging,
+		badgerKv,
+	)
 	mpcNode.WaitPeersReady()
 
 	handler(natsPubSub, mpcNode)
