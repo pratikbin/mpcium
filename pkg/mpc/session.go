@@ -3,7 +3,6 @@ package mpc
 import (
 	"crypto/ecdsa"
 	"fmt"
-	"time"
 
 	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/tss"
@@ -32,7 +31,8 @@ type Session struct {
 	party tss.Party
 
 	// its ready when alls party emit ready
-	readyCh chan string
+	readyCh   chan string
+	preParams *keygen.LocalPreParams
 }
 
 func NewSession(
@@ -43,8 +43,8 @@ func NewSession(
 	partyIDs []*tss.PartyID,
 	threshold int,
 	mapPartyIdToNodeId map[string]string,
+	preParams *keygen.LocalPreParams,
 ) *Session {
-	fmt.Printf("mapPartyIdToNodeId = %+v\n", mapPartyIdToNodeId)
 	return &Session{
 		walletID:           walletID,
 		pubSub:             pubSub,
@@ -57,6 +57,7 @@ func NewSession(
 		ErrCh:              make(chan error),
 		readyCh:            make(chan string, 3),
 		mapPartyIdToNodeId: mapPartyIdToNodeId,
+		preParams:          preParams,
 	}
 }
 
@@ -77,34 +78,34 @@ func (s *Session) composeReadyTopic() string {
 }
 
 func (s *Session) Init() error {
-	go func() {
-		topic := s.composeReadyTopic()
-		fmt.Println("Subscribing to topic", topic)
-		s.pubSub.Subscribe(topic, func(data []byte) {
-			fmt.Printf("string(data) = %+v\n", string(data))
-			log.Info().Msgf("Received ready message for %s from %s", topic, string(data))
-			s.readyCh <- string(data)
-		})
-	}()
+	// go func() {
+	// 	topic := s.composeReadyTopic()
+	// 	fmt.Println("Subscribing to topic", topic)
+	// 	s.pubSub.Subscribe(topic, func(data []byte) {
+	// 		fmt.Printf("string(data) = %+v\n", string(data))
+	// 		log.Info().Msgf("Received ready message for %s from %s", topic, string(data))
+	// 		s.readyCh <- string(data)
+	// 	})
+	// }()
 
-	preParams, err := keygen.GeneratePreParams(1 * time.Minute)
-	if err != nil {
-		return err
-	}
+	// preParams, err := keygen.GeneratePreParams(1 * time.Minute)
+	// if err != nil {
+	// 	return err
+	// }
 
 	log.Info().Msgf("Initializing session with partyID: %s, peerIDs %s", s.selfPartyID, s.partyIDs)
 	ctx := tss.NewPeerContext(s.partyIDs)
 	params := tss.NewParameters(tss.S256(), ctx, s.selfPartyID, len(s.partyIDs), s.threshold)
-	s.party = keygen.NewLocalParty(params, s.outCh, s.endCh, *preParams)
+	s.party = keygen.NewLocalParty(params, s.outCh, s.endCh, *s.preParams)
 	log.Info().Msg("Initialized session successfully")
 
-	s.pubSub.Publish(s.composeReadyTopic(), []byte(PartyIDToNodeID(s.selfPartyID)))
-	s.readyCh <- PartyIDToNodeID(s.selfPartyID)
+	// s.pubSub.Publish(s.composeReadyTopic(), []byte(PartyIDToNodeID(s.selfPartyID)))
+	// s.readyCh <- PartyIDToNodeID(s.selfPartyID)
 
-	for i := 0; i < len(s.partyIDs); i++ {
-		nodeID := <-s.readyCh
-		fmt.Printf("nodeID is ready = %+v\n", nodeID)
-	}
+	// for i := 0; i < len(s.partyIDs); i++ {
+	// 	nodeID := <-s.readyCh
+	// 	fmt.Printf("nodeID is ready = %+v\n", nodeID)
+	// }
 
 	color.Cyan("All parties are ready")
 

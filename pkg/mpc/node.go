@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"math/big"
+	"time"
 
+	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/google/uuid"
 )
@@ -16,8 +19,9 @@ type Node struct {
 	nodeID  string
 	peerIDs []string
 
-	pubSub messaging.PubSub
-	direct messaging.DirectMessaging
+	pubSub    messaging.PubSub
+	direct    messaging.DirectMessaging
+	preParams *keygen.LocalPreParams
 }
 
 func CreatePartyID(nodeID string, label string) *tss.PartyID {
@@ -41,11 +45,20 @@ func NewNode(
 	pubSub messaging.PubSub,
 	direct messaging.DirectMessaging,
 ) *Node {
+	preParams, err := keygen.GeneratePreParams(1 * time.Minute)
+	if err != nil {
+		logger.Error("Generate pre params failed", err)
+		return nil
+	}
+
+	logger.Info("Starting new node, preparams is generated successfully!")
+
 	return &Node{
-		nodeID:  nodeID,
-		peerIDs: peerIDs,
-		pubSub:  pubSub,
-		direct:  direct,
+		nodeID:    nodeID,
+		peerIDs:   peerIDs,
+		pubSub:    pubSub,
+		direct:    direct,
+		preParams: preParams,
 	}
 }
 
@@ -80,6 +93,7 @@ func (p *Node) CreateKeyGenSession(walletID string, threshold int) (*Session, er
 		sortedPartyIds,
 		threshold,
 		mapPartyIdToNodeId,
+		p.preParams,
 	)
 
 	return session, nil
