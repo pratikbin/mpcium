@@ -176,9 +176,7 @@ func (s *Session) GenerateKey() {
 			blue.Printf("Received message from %v\n", msg)
 			s.handleMessage(msg)
 		case saveData := <-s.endCh:
-
 			publicKey := saveData.ECDSAPub
-
 			pubKey := &ecdsa.PublicKey{
 				Curve: publicKey.Curve(),
 				X:     publicKey.X(),

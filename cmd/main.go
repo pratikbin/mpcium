@@ -1,14 +1,19 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog/pkgerrors"
+
 	"github.com/cryptoniumX/mpcium/pkg/config"
+	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/cryptoniumX/mpcium/pkg/mpc"
 	"github.com/hashicorp/consul/api"
@@ -16,35 +21,40 @@ import (
 )
 
 func main() {
+	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
+	logger.Init("dev")
 	nodeName := flag.String("name", "", "Node name")
 	flag.Parse()
 
 	if *nodeName == "" {
-		log.Fatal("Name is required")
+		log.Fatal().Msg("Node name is required")
 	}
 
 	// Create a new Consul client
 	client, err := api.NewClient(api.DefaultConfig())
 	if err != nil {
-		log.Fatal(err)
+		log.Error().Err(err)
 	}
 
 	// Create a Key-Value store client
 	kv := client.KV()
 	peers, err := config.LoadPeersFromConsul(kv, "mpc-peers/")
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("Failed to load peers from Consul", err, "node", *nodeName)
+		// log.Error().Stack().Err(err).Msg("Failed to load peers from Consul")
 	}
 
 	nodeID := config.GetNodeID(*nodeName, peers)
 	if nodeID == "" {
-		log.Fatal("Node not found")
+		log.Error().Err(errors.New("Node not found"))
 	}
+
+	logger.Info("Node is running", "nodeID", nodeID)
 
 	fmt.Printf("NODE ID is running = %+v\n", nodeID)
 	natsConn, err := nats.Connect(nats.DefaultURL, nats.Name("Nats NoEcho"), nats.NoEcho())
 	if err != nil {
-		log.Fatal(err)
+		log.Error().Err(err)
 	}
 
 	natsPubSub := messaging.NewNATSPubSub(natsConn)
@@ -92,7 +102,7 @@ func handler(pubsub messaging.PubSub, mpcNode *mpc.Node) {
 
 		err = session.Init()
 		if err != nil {
-			log.Fatal(err)
+			log.Error().Err(err)
 		}
 		go func() {
 			for {

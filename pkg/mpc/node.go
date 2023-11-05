@@ -30,8 +30,8 @@ func PartyIDToNodeID(partyID *tss.PartyID) string {
 	return string(partyID.KeyInt().Bytes())
 }
 
-func ArePartyIDsEqual(partyID1, partyID2 *tss.PartyID) bool {
-	return bytes.Equal(partyID1.KeyInt().Bytes(), partyID2.KeyInt().Bytes())
+func ArePartyIDsEqual(x, y *tss.PartyID) bool {
+	return bytes.Equal(x.KeyInt().Bytes(), y.KeyInt().Bytes())
 
 }
 
