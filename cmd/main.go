@@ -42,6 +42,8 @@ func main() {
 		[]byte("1JwFmsc9lxlLfkPl"),
 	)
 
+	defer badgerKv.Close()
+
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create badger kv store")
 	}
