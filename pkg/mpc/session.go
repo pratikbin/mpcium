@@ -6,6 +6,11 @@ import (
 
 	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcutil"
+	"github.com/cryptoniumX/mpcium/pkg/addr"
+	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/fatih/color"
@@ -187,6 +192,44 @@ func (s *Session) GenerateKey() {
 			address := crypto.PubkeyToAddress(*pubKey)
 			fmt.Printf("address = %+v\n", address)
 
+			var compressedPublicKey []byte
+			yBytes := publicKey.Y().Bytes()
+			xBytes := publicKey.X().Bytes()
+
+			fmt.Printf("len(xBytes) = %+v\n", len(xBytes))
+			fmt.Printf("len(yBytes) = %+v\n", len(yBytes))
+			if yBytes[len(yBytes)-1]%2 == 0 {
+				// Even y-coordinate, prefix with 0x02
+				compressedPublicKey = append([]byte{0x02}, xBytes...)
+			} else {
+				// Odd y-coordinate, prefix with 0x03
+				compressedPublicKey = append([]byte{0x03}, xBytes...)
+			}
+
+			btcPubKey, err := btcec.ParsePubKey(compressedPublicKey, btcec.S256())
+			if err != nil {
+				logger.Error("failed to parse public key", err)
+			}
+
+			params := &chaincfg.MainNetParams
+			btcAddress, errAddr := btcutil.NewAddressPubKey(btcPubKey.SerializeCompressed(), params)
+			if err != nil {
+				logger.Error("failed to create new address", errAddr)
+			}
+
+			bech32Addr, err := addr.PublicKeyToBech32Address(btcPubKey, params)
+			if err != nil {
+				logger.Error("failed to parse to bech32  address", err)
+			}
+
+			p2shAddr, err := addr.PublicKeyToP2SHSegWitAddress(btcPubKey, params)
+			if err != nil {
+				logger.Error("failed to parse to p2shAddr  address", err)
+			}
+
+			fmt.Println("Bitcoin Address P2PKH:", btcAddress.EncodeAddress())
+			fmt.Println("Bitcoin Address Bech32:", bech32Addr)
+			fmt.Println("Bitcoin Address P2SH:", p2shAddr)
 		}
 
 	}
