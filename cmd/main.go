@@ -68,6 +68,7 @@ func main() {
 	}
 
 	mpcNode := mpc.NewNode(nodeID, peersIDs, natsPubSub, directMessaging)
+	mpcNode.WaitPeersReady()
 
 	handler(natsPubSub, mpcNode)
 

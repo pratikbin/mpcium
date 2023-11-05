@@ -22,6 +22,9 @@ type Node struct {
 	pubSub    messaging.PubSub
 	direct    messaging.DirectMessaging
 	preParams *keygen.LocalPreParams
+
+	peerReadyCh chan struct{}
+	readyCh     chan struct{}
 }
 
 func CreatePartyID(nodeID string, label string) *tss.PartyID {
@@ -45,6 +48,21 @@ func NewNode(
 	pubSub messaging.PubSub,
 	direct messaging.DirectMessaging,
 ) *Node {
+	peerReadyCh := make(chan struct{}, len(peerIDs)-1)
+	for _, peerID := range peerIDs {
+		if peerID == nodeID {
+			continue
+		}
+		go func(peerID string) {
+			topic := composeReadyTopic(peerID)
+			pubSub.Subscribe(topic, func(data []byte) {
+				logger.Info("Receive peer ready message", "topic", topic, "peerId", peerID)
+				peerReadyCh <- struct{}{}
+			})
+		}(peerID)
+
+	}
+
 	preParams, err := keygen.GeneratePreParams(1 * time.Minute)
 	if err != nil {
 		logger.Error("Generate pre params failed", err)
@@ -54,16 +72,36 @@ func NewNode(
 	logger.Info("Starting new node, preparams is generated successfully!")
 
 	return &Node{
-		nodeID:    nodeID,
-		peerIDs:   peerIDs,
-		pubSub:    pubSub,
-		direct:    direct,
-		preParams: preParams,
+		nodeID:      nodeID,
+		peerIDs:     peerIDs,
+		pubSub:      pubSub,
+		direct:      direct,
+		preParams:   preParams,
+		peerReadyCh: peerReadyCh,
+		readyCh:     make(chan struct{}),
 	}
 }
 
 func (p *Node) ID() string {
 	return p.nodeID
+}
+
+func composeReadyTopic(nodeID string) string {
+	return fmt.Sprintf("%s-%s", nodeID, "ready")
+}
+
+func (p *Node) WaitPeersReady() {
+	p.pubSub.Publish(composeReadyTopic(p.nodeID), []byte("ready"))
+
+	for i := 0; i < len(p.peerIDs)-1; i++ {
+		<-p.peerReadyCh
+	}
+
+	for _, peerID := range p.peerIDs {
+		logger.Info("Peer status", "peerId", peerID, "status", "ready")
+	}
+
+	logger.Info("All peers are ready", "peers", p.peerIDs)
 }
 
 func (p *Node) CreateKeyGenSession(walletID string, threshold int) (*Session, error) { // generate pre params
