@@ -7,10 +7,10 @@ import (
 
 	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/tss"
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
-	"github.com/cryptoniumX/mpcium/pkg/addr"
+	"github.com/cryptoniumX/mpcium/pkg/encoding"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
@@ -18,6 +18,10 @@ import (
 	"github.com/fatih/color"
 
 	"github.com/rs/zerolog/log"
+)
+
+const (
+	TypeGenerateWalletSuccess = "mpc:generate:success:%s"
 )
 
 type Session struct {
@@ -201,6 +205,19 @@ func (s *Session) GenerateKey() {
 				Y:     publicKey.Y(),
 			}
 
+			// xc, yc := elliptic.UnmarshalCompressed(btcec.S256(), pubKeyBytes)
+			// if bytes.Equal(pubKey.X.Bytes(), xc.Bytes()) && bytes.Equal(pubKey.Y.Bytes(), yc.Bytes()) {
+			// 	fmt.Println("PUBLIC KEY IS VALID")
+			// }
+
+			fmt.Printf("pubKey.Curve() = %+v\n", publicKey.Curve())
+
+			pubKeyBytes, err := encoding.EncodeS256PubKey(pubKey)
+			if err != nil {
+				logger.Error("failed to encode public key", err)
+			}
+			fmt.Printf("publicKeyBytes = %+v\n", pubKeyBytes)
+
 			address := crypto.PubkeyToAddress(*pubKey)
 			fmt.Printf("address = %+v\n", address)
 
@@ -208,8 +225,6 @@ func (s *Session) GenerateKey() {
 			yBytes := publicKey.Y().Bytes()
 			xBytes := publicKey.X().Bytes()
 
-			fmt.Printf("len(xBytes) = %+v\n", len(xBytes))
-			fmt.Printf("len(yBytes) = %+v\n", len(yBytes))
 			if yBytes[len(yBytes)-1]%2 == 0 {
 				// Even y-coordinate, prefix with 0x02
 				compressedPublicKey = append([]byte{0x02}, xBytes...)
@@ -218,7 +233,7 @@ func (s *Session) GenerateKey() {
 				compressedPublicKey = append([]byte{0x03}, xBytes...)
 			}
 
-			btcPubKey, err := btcec.ParsePubKey(compressedPublicKey, btcec.S256())
+			btcPubKey, err := btcec.ParsePubKey(compressedPublicKey)
 			if err != nil {
 				logger.Error("failed to parse public key", err)
 			}
@@ -229,12 +244,12 @@ func (s *Session) GenerateKey() {
 				logger.Error("failed to create new address", errAddr)
 			}
 
-			bech32Addr, err := addr.PublicKeyToBech32Address(btcPubKey, params)
+			bech32Addr, err := encoding.PublicKeyToBech32Address(btcPubKey, params)
 			if err != nil {
 				logger.Error("failed to parse to bech32  address", err)
 			}
 
-			p2shAddr, err := addr.PublicKeyToP2SHSegWitAddress(btcPubKey, params)
+			p2shAddr, err := encoding.PublicKeyToP2SHSegWitAddress(btcPubKey, params)
 			if err != nil {
 				logger.Error("failed to parse to p2shAddr  address", err)
 			}
@@ -255,7 +270,7 @@ func (s *Session) GenerateKey() {
 				panic(err)
 			}
 
-			logger.Info("Get key from badger", "key", s.walletID, "data", data)
+			s.pubSub.Publish(fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID), pubKeyBytes)
 		}
 
 	}

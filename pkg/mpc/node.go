@@ -123,7 +123,6 @@ func (p *Node) CreateKeyGenSession(walletID string, threshold int) (*Session, er
 			partyIDs[i] = CreatePartyID(peerID, "keygen")
 		}
 	}
-	fmt.Printf("selfPartyID = %+v\n", selfPartyID)
 
 	sortedPartyIds := tss.SortPartyIDs(partyIDs, 0)
 
