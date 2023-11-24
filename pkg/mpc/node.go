@@ -112,8 +112,6 @@ func (p *Node) CreateKeyGenSession(walletID string, threshold int) (*Session, er
 	var selfPartyID *tss.PartyID
 	partyIDs := make([]*tss.PartyID, len(p.peerIDs))
 
-	mapPartyIdToNodeId := make(map[string]string)
-
 	for i, peerID := range p.peerIDs {
 		if peerID == p.nodeID {
 			selfPartyID = CreatePartyID(peerID, "keygen")
@@ -133,7 +131,6 @@ func (p *Node) CreateKeyGenSession(walletID string, threshold int) (*Session, er
 		selfPartyID,
 		sortedPartyIds,
 		threshold,
-		mapPartyIdToNodeId,
 		p.preParams,
 		p.kvstore,
 	)

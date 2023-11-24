@@ -33,16 +33,13 @@ type Session struct {
 	selfPartyID *tss.PartyID
 
 	// IDs of all parties in the session including self
-	mapPartyIdToNodeId map[string]string
-	partyIDs           []*tss.PartyID
-	outCh              chan tss.Message
-	endCh              chan keygen.LocalPartySaveData
-	ErrCh              chan error
+	partyIDs []*tss.PartyID
+	outCh    chan tss.Message
+	endCh    chan keygen.LocalPartySaveData
+	ErrCh    chan error
 
 	party tss.Party
 
-	// its ready when alls party emit ready
-	readyCh   chan string
 	preParams *keygen.LocalPreParams
 	kvstore   kvstore.KVStore
 }
@@ -54,24 +51,21 @@ func NewSession(
 	selfID *tss.PartyID,
 	partyIDs []*tss.PartyID,
 	threshold int,
-	mapPartyIdToNodeId map[string]string,
 	preParams *keygen.LocalPreParams,
 	kvstore kvstore.KVStore,
 ) *Session {
 	return &Session{
-		walletID:           walletID,
-		pubSub:             pubSub,
-		direct:             direct,
-		threshold:          threshold,
-		selfPartyID:        selfID,
-		partyIDs:           partyIDs,
-		outCh:              make(chan tss.Message),
-		endCh:              make(chan keygen.LocalPartySaveData),
-		ErrCh:              make(chan error),
-		readyCh:            make(chan string, 3),
-		mapPartyIdToNodeId: mapPartyIdToNodeId,
-		preParams:          preParams,
-		kvstore:            kvstore,
+		walletID:    walletID,
+		pubSub:      pubSub,
+		direct:      direct,
+		threshold:   threshold,
+		selfPartyID: selfID,
+		partyIDs:    partyIDs,
+		outCh:       make(chan tss.Message),
+		endCh:       make(chan keygen.LocalPartySaveData),
+		ErrCh:       make(chan error),
+		preParams:   preParams,
+		kvstore:     kvstore,
 	}
 }
 
@@ -92,37 +86,12 @@ func (s *Session) composeReadyTopic() string {
 }
 
 func (s *Session) Init() error {
-	// go func() {
-	// 	topic := s.composeReadyTopic()
-	// 	fmt.Println("Subscribing to topic", topic)
-	// 	s.pubSub.Subscribe(topic, func(data []byte) {
-	// 		fmt.Printf("string(data) = %+v\n", string(data))
-	// 		log.Info().Msgf("Received ready message for %s from %s", topic, string(data))
-	// 		s.readyCh <- string(data)
-	// 	})
-	// }()
-
-	// preParams, err := keygen.GeneratePreParams(1 * time.Minute)
-	// if err != nil {
-	// 	return err
-	// }
-
-	log.Info().Msgf("Initializing session with partyID: %s, peerIDs %s", s.selfPartyID, s.partyIDs)
+	logger.Infof("Initializing session with partyID: %s, peerIDs %s", s.selfPartyID, s.partyIDs)
 	ctx := tss.NewPeerContext(s.partyIDs)
 	params := tss.NewParameters(tss.S256(), ctx, s.selfPartyID, len(s.partyIDs), s.threshold)
 	s.party = keygen.NewLocalParty(params, s.outCh, s.endCh, *s.preParams)
 	log.Info().Msg("Initialized session successfully")
-
-	// s.pubSub.Publish(s.composeReadyTopic(), []byte(PartyIDToNodeID(s.selfPartyID)))
-	// s.readyCh <- PartyIDToNodeID(s.selfPartyID)
-
-	// for i := 0; i < len(s.partyIDs); i++ {
-	// 	nodeID := <-s.readyCh
-	// 	fmt.Printf("nodeID is ready = %+v\n", nodeID)
-	// }
-
-	color.Cyan("All parties are ready")
-
+	logger.Infof("PartyID: %s is ready!", s.party.PartyID())
 	return nil
 }
 
@@ -204,11 +173,6 @@ func (s *Session) GenerateKey() {
 				X:     publicKey.X(),
 				Y:     publicKey.Y(),
 			}
-
-			// xc, yc := elliptic.UnmarshalCompressed(btcec.S256(), pubKeyBytes)
-			// if bytes.Equal(pubKey.X.Bytes(), xc.Bytes()) && bytes.Equal(pubKey.Y.Bytes(), yc.Bytes()) {
-			// 	fmt.Println("PUBLIC KEY IS VALID")
-			// }
 
 			fmt.Printf("pubKey.Curve() = %+v\n", publicKey.Curve())
 
@@ -312,8 +276,6 @@ func (s *Session) receiveMessage(rawMsg []byte) {
 	isBroadcast := msg.IsBroadcast && len(msg.To) == 0
 	isToSelf := len(msg.To) == 1 && ArePartyIDsEqual(msg.To[0], s.selfPartyID)
 
-	fmt.Printf("isBroadcast = %+v, isToSelf =%+v\n", isBroadcast, isToSelf)
-
 	if isBroadcast || isToSelf {
 		go func() {
 			if isBroadcast {
@@ -337,5 +299,4 @@ func (s *Session) receiveMessage(rawMsg []byte) {
 // Close and clean up
 func (s *Session) Close() {
 	return
-
 }

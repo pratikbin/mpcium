@@ -8,9 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/rs/zerolog/pkgerrors"
 
 	"github.com/cryptoniumX/mpcium/pkg/config"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
@@ -22,7 +20,6 @@ import (
 )
 
 func main() {
-	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 	logger.Init("dev")
 	nodeName := flag.String("name", "", "Node name")
 	flag.Parse()
@@ -107,7 +104,7 @@ func main() {
 
 func handler(pubsub messaging.PubSub, mpcNode *mpc.Node) {
 	fmt.Println("Subscribing to topic 'mpc:generate'")
-	pubsub.Subscribe("mpc:generate", func(msg []byte) {
+	go pubsub.Subscribe("mpc:generate", func(msg []byte) {
 		fmt.Printf("msg = %+v\n", string(msg))
 
 		walletID := string(msg)
@@ -135,7 +132,12 @@ func handler(pubsub messaging.PubSub, mpcNode *mpc.Node) {
 		}()
 
 		go session.GenerateKey()
+		// TODO -> done and close channel
 		session.ListenToIncomingMessage()
 
+	})
+
+	go pubsub.Subscribe("signing_event", func(msg []byte) {
+		fmt.Printf("Signing event received = %+v\n", msg)
 	})
 }
