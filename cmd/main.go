@@ -142,7 +142,7 @@ func handler(pubsub messaging.PubSub, mpcNode *mpc.Node) {
 
 		logger.Info("Received signing event", "waleltID", msg.WalletID, "tx", msg.Tx)
 		threshold := 2
-		session, err := mpcNode.CreateSigningSession(msg.WalletID, msg.TxID, threshold)
+		session, err := mpcNode.CreateSigningSession(msg.WalletID, msg.TxID, msg.NetworkInternalCode, threshold)
 		if err != nil {
 			logger.Error("Failed to create signing session", err)
 			return

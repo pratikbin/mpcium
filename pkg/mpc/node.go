@@ -137,6 +137,7 @@ func (p *Node) CreateSigningSession(
 	session := NewSigningSession(
 		walletID,
 		txID,
+		networkInternalCode,
 		p.pubSub,
 		p.direct,
 		selfPartyID,
