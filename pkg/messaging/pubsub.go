@@ -1,8 +1,8 @@
 package messaging
 
 import (
+	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/nats-io/nats.go"
-	"github.com/rs/zerolog/log"
 )
 
 type PubSub interface {
@@ -19,7 +19,7 @@ func NewNATSPubSub(natsConn *nats.Conn) PubSub {
 }
 
 func (n *natsPubSub) Publish(topic string, message []byte) error {
-	log.Info().Msgf("Publishing to topic %s", topic)
+	logger.Infof("Publishing to topic %s", topic)
 	return n.natsConn.Publish(topic, message)
 }
 

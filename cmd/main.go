@@ -1,14 +1,11 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
-
-	"github.com/rs/zerolog/log"
 
 	"github.com/cryptoniumX/mpcium/pkg/config"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
@@ -21,55 +18,55 @@ import (
 
 func main() {
 	logger.Init("dev")
-	nodeName := flag.String("name", "", "Node name")
+	nodeName := flag.String("name", "", "Provide node name")
 	flag.Parse()
 
 	if *nodeName == "" {
-		log.Fatal().Msg("Node name is required")
+		logger.Fatal("Node name is required", nil)
 	}
 
 	// Create a new Consul client
 	client, err := api.NewClient(api.DefaultConfig())
 	if err != nil {
-		log.Error().Err(err)
+		logger.Fatal("Failed to create consul client", err)
 	}
+	logger.Info("Connected to consul!", "configuration", api.DefaultConfig())
 
+	dbPath := fmt.Sprintf("./db/%s", *nodeName)
 	badgerKv, err := kvstore.NewBadgerKVStore(
-		fmt.Sprintf("./db/%s", *nodeName),
+		dbPath,
 		[]byte("1JwFmsc9lxlLfkPl"),
 	)
 
 	defer badgerKv.Close()
-
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create badger kv store")
+		logger.Fatal("Failed to create badger kv store", err)
 	}
+	logger.Info("Connected to badger kv store", "path", dbPath)
 
 	// Create a Key-Value store client
 	kv := client.KV()
 	peers, err := config.LoadPeersFromConsul(kv, "mpc-peers/")
 	if err != nil {
-		logger.Error("Failed to load peers from Consul", err, "node", *nodeName)
-		// log.Error().Stack().Err(err).Msg("Failed to load peers from Consul")
+		logger.Fatal("Failed to load peers from Consul", err)
 	}
-
+	logger.Info("Loaded peers from consul", "peers", peers)
 	nodeID := config.GetNodeID(*nodeName, peers)
 	if nodeID == "" {
-		log.Error().Err(errors.New("Node not found"))
+		logger.Error("Node ID not found", nil, "node", *nodeName)
+		return
 	}
 
-	logger.Info("Node is running", "nodeID", nodeID)
-
-	fmt.Printf("NODE ID is running = %+v\n", nodeID)
 	natsConn, err := nats.Connect(nats.DefaultURL, nats.Name("Nats NoEcho"), nats.NoEcho())
 	if err != nil {
-		log.Error().Err(err)
+		logger.Fatal("Failed to connect to nats", err)
 	}
 
 	natsPubSub := messaging.NewNATSPubSub(natsConn)
 	directMessaging := messaging.NewNatsDirectMessaging(natsConn)
-
 	defer natsConn.Close()
+
+	logger.Info("Node is running", "nodeID", nodeID, "name", *nodeName)
 
 	var peersIDs []string
 	for _, peer := range peers {
@@ -103,29 +100,23 @@ func main() {
 }
 
 func handler(pubsub messaging.PubSub, mpcNode *mpc.Node) {
-	fmt.Println("Subscribing to topic 'mpc:generate'")
+	logger.Info("Starting handler, subscribe to topic", "topic", "mpc:generate")
 	go pubsub.Subscribe("mpc:generate", func(msg []byte) {
-		fmt.Printf("msg = %+v\n", string(msg))
-
 		walletID := string(msg)
+		// TODO: threshold is configurable
 		threshold := 3
 		session, err := mpcNode.CreateKeyGenSession(walletID, threshold)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-		fmt.Printf("session = %+v\n", session)
 
-		err = session.Init()
-		if err != nil {
-			log.Error().Err(err)
-		}
+		session.Init()
 		go func() {
 			for {
 				select {
 				case err := <-session.ErrCh:
-					fmt.Printf("err = %+v\n", err)
-
+					logger.Error("Keygen session error", err)
 				}
 			}
 
@@ -137,7 +128,8 @@ func handler(pubsub messaging.PubSub, mpcNode *mpc.Node) {
 
 	})
 
-	go pubsub.Subscribe("signing_event", func(msg []byte) {
-		fmt.Printf("Signing event received = %+v\n", msg)
+	logger.Info("Subscribed to topic", "topic", "signing:event")
+	go pubsub.Subscribe("signing:event", func(msg []byte) {
+		logger.Info("Received signing event", "msg", string(msg))
 	})
 }
