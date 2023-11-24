@@ -1,10 +1,8 @@
 package messaging
 
 import (
-	"fmt"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/nats-io/nats.go"
 )
 
@@ -24,18 +22,15 @@ func NewNatsDirectMessaging(natsConn *nats.Conn) DirectMessaging {
 }
 
 func (d *natsDirectMessaging) Send(id string, message []byte) error {
-	color.Green("SEND DIRECT REQUEST", id)
-	msg, err := d.natsConn.Request(id, message, 1*time.Second)
+	_, err := d.natsConn.Request(id, message, 1*time.Second)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("msg = %+v\n", msg)
 	return nil
 }
 
 func (d *natsDirectMessaging) Listen(id string, handler func(data []byte)) error {
 	_, err := d.natsConn.Subscribe(id, func(m *nats.Msg) {
-		color.Yellow("RECEIVE DIRECT REQUEST", id)
 		handler(m.Data)
 		m.Respond([]byte("OK"))
 	})

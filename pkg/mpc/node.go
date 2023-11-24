@@ -14,6 +14,11 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	PurposeKeygen string = "keygen"
+	PurposeSign   string = "sign"
+)
+
 type ID string
 
 type Node struct {
@@ -104,35 +109,57 @@ func (p *Node) WaitPeersReady() {
 		logger.Info("Peer status", "peerId", peerID, "status", "ready")
 	}
 
-	logger.Info("All peers are ready", "peers", p.peerIDs)
+	logger.Info("ALL PEERS ARE READY!", "peers", p.peerIDs)
 }
 
-func (p *Node) CreateKeyGenSession(walletID string, threshold int) (*Session, error) { // generate pre params
-	var selfPartyID *tss.PartyID
-	partyIDs := make([]*tss.PartyID, len(p.peerIDs))
-
-	for i, peerID := range p.peerIDs {
-		if peerID == p.nodeID {
-			selfPartyID = CreatePartyID(peerID, "keygen")
-			partyIDs[i] = selfPartyID
-		} else {
-
-			partyIDs[i] = CreatePartyID(peerID, "keygen")
-		}
-	}
-
-	sortedPartyIds := tss.SortPartyIDs(partyIDs, 0)
-
-	session := NewSession(
+func (p *Node) CreateKeyGenSession(walletID string, threshold int) (*KeygenSession, error) {
+	selfPartyID, allPartyIDs := p.generatePartyIDs(PurposeKeygen)
+	session := NewKeygenSession(
 		walletID,
 		p.pubSub,
 		p.direct,
 		selfPartyID,
-		sortedPartyIds,
+		allPartyIDs,
+		threshold,
+		p.preParams,
+		p.kvstore,
+	)
+	return session, nil
+}
+
+func (p *Node) CreateSigningSession(
+	walletID string,
+	txID string,
+	networkInternalCode string,
+	threshold int,
+) (*SigningSession, error) {
+	selfPartyID, allPartyIDs := p.generatePartyIDs(PurposeKeygen)
+	session := NewSigningSession(
+		walletID,
+		txID,
+		p.pubSub,
+		p.direct,
+		selfPartyID,
+		allPartyIDs,
 		threshold,
 		p.preParams,
 		p.kvstore,
 	)
 
 	return session, nil
+}
+
+func (p *Node) generatePartyIDs(purpose string) (self *tss.PartyID, all []*tss.PartyID) {
+	var selfPartyID *tss.PartyID
+	partyIDs := make([]*tss.PartyID, len(p.peerIDs))
+	for i, peerID := range p.peerIDs {
+		if peerID == p.nodeID {
+			selfPartyID = CreatePartyID(peerID, purpose)
+			partyIDs[i] = selfPartyID
+		} else {
+			partyIDs[i] = CreatePartyID(peerID, purpose)
+		}
+	}
+	allPartyIDs := tss.SortPartyIDs(partyIDs, 0)
+	return selfPartyID, allPartyIDs
 }

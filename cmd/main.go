@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"math/big"
 	"os"
 	"os/signal"
 	"syscall"
@@ -104,7 +106,7 @@ func handler(pubsub messaging.PubSub, mpcNode *mpc.Node) {
 	go pubsub.Subscribe("mpc:generate", func(msg []byte) {
 		walletID := string(msg)
 		// TODO: threshold is configurable
-		threshold := 3
+		threshold := 2
 		session, err := mpcNode.CreateKeyGenSession(walletID, threshold)
 		if err != nil {
 			fmt.Println(err)
@@ -128,8 +130,47 @@ func handler(pubsub messaging.PubSub, mpcNode *mpc.Node) {
 
 	})
 
-	logger.Info("Subscribed to topic", "topic", "signing:event")
-	go pubsub.Subscribe("signing:event", func(msg []byte) {
-		logger.Info("Received signing event", "msg", string(msg))
+	logger.Info("Subscribed to topic", "topic", "mpc:sign")
+	go pubsub.Subscribe("mpc:sign", func(raw []byte) {
+
+		var msg SignTxMessage
+		err := json.Unmarshal(raw, &msg)
+		if err != nil {
+			logger.Error("Failed to unmarshal message", err)
+			return
+		}
+
+		logger.Info("Received signing event", "waleltID", msg.WalletID, "tx", msg.Tx)
+		threshold := 2
+		session, err := mpcNode.CreateSigningSession(msg.WalletID, msg.TxID, threshold)
+		if err != nil {
+			logger.Error("Failed to create signing session", err)
+			return
+		}
+
+		txBigInt := new(big.Int).SetBytes(msg.Tx)
+		session.Init(txBigInt)
+
+		go func() {
+			for {
+				select {
+				case err := <-session.ErrCh:
+					logger.Error("Signing session error", err)
+				}
+			}
+
+		}()
+
+		go session.Sign()
+		// TODO -> done and close channel
+		session.ListenToIncomingMessage()
+
 	})
+}
+
+type SignTxMessage struct {
+	WalletID            string `json:"wallet_id"`
+	NetworkInternalCode string `json:"network_internal_code"`
+	TxID                string `json:"tx_id"`
+	Tx                  []byte `json:"tx"`
 }
