@@ -32,7 +32,7 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to create consul client", err)
 	}
-	logger.Info("Connected to consul!", "configuration", api.DefaultConfig())
+	logger.Info("Connected to consul!")
 
 	dbPath := fmt.Sprintf("./db/%s", *nodeName)
 	badgerKv, err := kvstore.NewBadgerKVStore(

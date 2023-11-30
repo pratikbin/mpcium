@@ -5,10 +5,9 @@ go 1.21.0
 require (
 	github.com/bnb-chain/tss-lib v1.5.0
 	github.com/btcsuite/btcd v0.0.0-20190629003639-c26ffa870fd8
+	github.com/btcsuite/btcd/btcec/v2 v2.2.0
 	github.com/btcsuite/btcutil v0.0.0-20190425235716-9e5f4b9a998d
 	github.com/dgraph-io/badger/v4 v4.2.0
-	github.com/ethereum/go-ethereum v1.13.4
-	github.com/fatih/color v1.15.0
 	github.com/google/uuid v1.4.0
 	github.com/hashicorp/consul/api v1.26.1
 	github.com/nats-io/nats.go v1.31.0
@@ -20,7 +19,6 @@ require (
 require (
 	github.com/agl/ed25519 v0.0.0-20170116200512-5312a6153412 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
-	github.com/btcsuite/btcd/btcec/v2 v2.2.0 // indirect
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -28,6 +26,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
+	github.com/fatih/color v1.15.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/glog v1.0.0 // indirect
 	github.com/golang/groupcache v0.0.0-20190702054246-869f871628b6 // indirect
@@ -42,9 +41,9 @@ require (
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hashicorp/serf v0.10.1 // indirect
-	github.com/holiman/uint256 v1.2.3 // indirect
 	github.com/ipfs/go-log v0.0.1 // indirect
 	github.com/klauspost/compress v1.17.0 // indirect
+	github.com/kr/pretty v0.3.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect

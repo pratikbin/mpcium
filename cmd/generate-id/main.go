@@ -37,12 +37,18 @@ func loadPeersFromJSON() ([]string, error) {
 			log.Fatalf("Failed to read JSON file: %v", err)
 		}
 
+		peerMap := make(map[string]string)
 		if len(data) > 0 {
 			// JSON data exists in the file, unmarshal it into the peers slice
-			if err := json.Unmarshal(data, &peers); err != nil {
+			if err := json.Unmarshal(data, &peerMap); err != nil {
 				log.Fatalf("Failed to unmarshal JSON data: %v", err)
 			}
 		}
+
+		for _, peer := range peerMap {
+			peers = append(peers, peer)
+		}
+
 	} else {
 		return nil, err
 	}
@@ -124,35 +130,34 @@ func main() {
 			fmt.Println(err)
 		}
 
+		var nodeIDs []string
 		if len(peers) == 0 {
 			// Node IDs to store
-			nodeIDs := []string{
+			nodeIDs = []string{
 				generateUniquePeerID(),
 				generateUniquePeerID(),
 				generateUniquePeerID(),
 			}
-
-			// Store node IDs with the "peers" prefix
-
-			pairs := make(map[string]string)
-			for id, nodeID := range nodeIDs {
-				key := fmt.Sprintf("%snode%d", prefix, id)
-				p := &api.KVPair{Key: key, Value: []byte(nodeID)}
-
-				pairs[fmt.Sprintf("node%d", id)] = nodeID
-
-				// Store the key-value pair
-				_, err := kv.Put(p, nil)
-				if err != nil {
-					log.Printf("Failed to store key %s: %v", key, err)
-				} else {
-					log.Printf("Stored key %s", key)
-				}
-			}
-
-			storePeersToJSON(pairs)
 
 		}
+
+		pairs := make(map[string]string)
+		for id, nodeID := range nodeIDs {
+			key := fmt.Sprintf("%snode%d", prefix, id)
+			p := &api.KVPair{Key: key, Value: []byte(nodeID)}
+
+			pairs[fmt.Sprintf("node%d", id)] = nodeID
+
+			// Store the key-value pair
+			_, err := kv.Put(p, nil)
+			if err != nil {
+				log.Printf("Failed to store key %s: %v", key, err)
+			} else {
+				log.Printf("Stored key %s", key)
+			}
+		}
+
+		storePeersToJSON(pairs)
 
 	}
 
