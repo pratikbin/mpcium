@@ -70,7 +70,7 @@ func NewNode(
 
 	}
 
-	preParams, err := keygen.GeneratePreParams(1 * time.Minute)
+	preParams, err := keygen.GeneratePreParams(5 * time.Minute)
 	if err != nil {
 		logger.Error("Generate pre params failed", err)
 		return nil
