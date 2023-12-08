@@ -33,11 +33,33 @@ func main() {
 	// Create a new Consul client
 	consulConfig := api.DefaultConfig()
 	consulConfig.Address = viper.GetString("consul.address")
-	client, err := api.NewClient(consulConfig)
+	consulClient, err := api.NewClient(consulConfig)
 	if err != nil {
 		logger.Fatal("Failed to create consul client", err)
 	}
 	logger.Info("Connected to consul!")
+
+	// Create a Key-Value store client
+	kv := consulClient.KV()
+	peers, err := config.LoadPeersFromConsul(kv, "mpc-peers/")
+	if err != nil {
+		logger.Fatal("Failed to load peers from Consul", err)
+	}
+	logger.Info("Loaded peers from consul", "peers", peers)
+	nodeID := config.GetNodeID(*nodeName, peers)
+	if nodeID == "" {
+		logger.Error("Node ID not found", nil, "node", *nodeName)
+		return
+	}
+
+	// ready, _, err := consulClient.KV().Get(mpc.ComposeReadyKey(nodeID), nil)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// if ready != nil {
+	// 	logger.Fatal("Node with this name is already running", nil)
+	// }
 
 	dbPath := fmt.Sprintf("./db/%s", *nodeName)
 	badgerKv, err := kvstore.NewBadgerKVStore(
@@ -50,19 +72,6 @@ func main() {
 		logger.Fatal("Failed to create badger kv store", err)
 	}
 	logger.Info("Connected to badger kv store", "path", dbPath)
-
-	// Create a Key-Value store client
-	kv := client.KV()
-	peers, err := config.LoadPeersFromConsul(kv, "mpc-peers/")
-	if err != nil {
-		logger.Fatal("Failed to load peers from Consul", err)
-	}
-	logger.Info("Loaded peers from consul", "peers", peers)
-	nodeID := config.GetNodeID(*nodeName, peers)
-	if nodeID == "" {
-		logger.Error("Node ID not found", nil, "node", *nodeName)
-		return
-	}
 
 	natsURL := viper.GetString("nats.url")
 	natsConn, err := nats.Connect(natsURL, nats.Name("Nats NoEcho"), nats.NoEcho())
@@ -87,8 +96,10 @@ func main() {
 		natsPubSub,
 		directMessaging,
 		badgerKv,
+		consulClient,
 	)
 	mpcNode.WaitPeersReady()
+	defer mpcNode.Close()
 
 	handler(natsPubSub, mpcNode)
 
