@@ -16,10 +16,13 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/mpc"
 	"github.com/hashicorp/consul/api"
 	"github.com/nats-io/nats.go"
+	"github.com/spf13/viper"
 )
 
 func main() {
+	config.InitViperConfig()
 	logger.Init("dev")
+
 	nodeName := flag.String("name", "", "Provide node name")
 	flag.Parse()
 
@@ -28,7 +31,9 @@ func main() {
 	}
 
 	// Create a new Consul client
-	client, err := api.NewClient(api.DefaultConfig())
+	consulConfig := api.DefaultConfig()
+	consulConfig.Address = viper.GetString("consul.address")
+	client, err := api.NewClient(consulConfig)
 	if err != nil {
 		logger.Fatal("Failed to create consul client", err)
 	}
@@ -59,7 +64,8 @@ func main() {
 		return
 	}
 
-	natsConn, err := nats.Connect(nats.DefaultURL, nats.Name("Nats NoEcho"), nats.NoEcho())
+	natsURL := viper.GetString("nats.url")
+	natsConn, err := nats.Connect(natsURL, nats.Name("Nats NoEcho"), nats.NoEcho())
 	if err != nil {
 		logger.Fatal("Failed to connect to nats", err)
 	}
