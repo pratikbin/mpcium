@@ -6,6 +6,11 @@ import (
 	"github.com/spf13/viper"
 )
 
+type AppConfig struct {
+	ConsulAddr string `yaml:"consul.address"`
+	NatsURL    string `yaml:"nats.url"`
+}
+
 func InitViperConfig() {
 	viper.SetConfigName("config") // name of config file (without extension)
 	viper.SetConfigType("yaml")   // REQUIRED if the config file does not have the extension in the name
@@ -19,4 +24,15 @@ func InitViperConfig() {
 
 	log.Println("Reading config file:", viper.ConfigFileUsed())
 	log.Println("Initialized config successfully!")
+}
+
+func LoadConfig() *AppConfig {
+	var config AppConfig
+	err := viper.Unmarshal(&config)
+	if err != nil {
+		log.Fatal("Unmarshal config failed.", err)
+	}
+
+	log.Println("Unmarshal config successfully!")
+	return &config
 }

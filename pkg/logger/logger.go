@@ -11,18 +11,10 @@ var Log zerolog.Logger
 
 func Init(env string) {
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
-	// var err error
-
 	if env != "production" {
 		Log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, NoColor: false}).With().Timestamp().Logger()
 	} else {
 		Log = zerolog.New(os.Stdout).With().Timestamp().Logger()
-
-		// if output == "stdout" {
-		// 	Log.logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
-		// } else if output == "stderr" {
-		// 	Log.logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
-		// }
 	}
 }
 
