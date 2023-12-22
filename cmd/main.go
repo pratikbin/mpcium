@@ -37,15 +37,16 @@ func main() {
 	}
 
 	appConfig := config.LoadConfig()
+	logger.Info("App config", "config", appConfig)
 
-	consulClient := NewConsulClient(appConfig.ConsulAddr)
+	consulClient := NewConsulClient(appConfig.Consul.Address)
 	badgerKV := NewBadgerKV(*nodeName)
 	defer badgerKV.Close()
 
 	peers := LoadPeersFromConsul(consulClient)
 	nodeID := GetIDFromName(*nodeName, peers)
 
-	natsConn := NewNATsConnection(appConfig.NatsURL)
+	natsConn := NewNATsConnection(appConfig.NATs.URL)
 	defer natsConn.Close()
 	pubsub := messaging.NewNATSPubSub(natsConn)
 	directMessaging := messaging.NewNatsDirectMessaging(natsConn)

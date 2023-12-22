@@ -7,8 +7,16 @@ import (
 )
 
 type AppConfig struct {
-	ConsulAddr string `yaml:"consul.address"`
-	NatsURL    string `yaml:"nats.url"`
+	Consul *ConsulConfig `mapstructure:"consul"`
+	NATs   *NATsConfig   `mapstructure:"nats"`
+}
+
+type ConsulConfig struct {
+	Address string `mapstructure:"address"`
+}
+
+type NATsConfig struct {
+	URL string `mapstructure:"url"`
 }
 
 func InitViperConfig() {
