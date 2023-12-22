@@ -49,14 +49,33 @@ func Info(msg string, keyValues ...interface{}) {
 
 }
 
+func Warn(msg string, keyValues ...interface{}) {
+
+	// ctx needs to be even because it's a series of key/value pairs
+	// no one wants to check for errors on logging functions,
+	// so instead of erroring on bad input, we'll just make sure
+	// that things are the right length and users can fix bugs
+	// when they see the output looks wrong
+
+	l := len(keyValues)
+	if l%2 != 0 {
+		Log.Warn().Caller().Interface("Unknown Key", keyValues).Msgf("%s ([Wrong logger.Info usage] Provided args to logger.Info must be a series of key/value pairs)", msg)
+	} else {
+		ctx := Log.Warn()
+
+		for i := 0; i < len(keyValues); i += 2 {
+			key, value := keyValues[i].(string), keyValues[i+1]
+			ctx = ctx.Interface(key, value)
+		}
+
+		ctx.Msg(msg)
+	}
+
+}
+
 // Info logs an info message.
 func Infof(format string, v ...interface{}) {
 	Log.Info().Msgf(format, v...)
-}
-
-// Warn logs a warning message.
-func Warn(msg string) {
-	Log.Warn().Msg(msg)
 }
 
 // Error logs an error message.

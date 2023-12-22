@@ -12,7 +12,6 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/google/uuid"
-	"github.com/hashicorp/consul/api"
 )
 
 const (
@@ -26,13 +25,12 @@ type Node struct {
 	nodeID  string
 	peerIDs []string
 
-	pubSub       messaging.PubSub
-	direct       messaging.DirectMessaging
-	kvstore      kvstore.KVStore
-	preParams    *keygen.LocalPreParams
-	consulClient *api.Client
-	peerReadyCh  chan struct{}
-	readyCh      chan struct{}
+	pubSub    messaging.PubSub
+	direct    messaging.DirectMessaging
+	kvstore   kvstore.KVStore
+	preParams *keygen.LocalPreParams
+
+	peerRegistry PeerRegistry
 }
 
 func CreatePartyID(nodeID string, label string) *tss.PartyID {
@@ -59,63 +57,16 @@ func NewNode(
 	pubSub messaging.PubSub,
 	direct messaging.DirectMessaging,
 	kvstore kvstore.KVStore,
-	consulClient *api.Client,
+	peerRegistry PeerRegistry,
 ) *Node {
-	peerReadyCh := make(chan struct{}, len(peerIDs)-1)
-	for _, peerID := range peerIDs {
-		if peerID == nodeID {
-			continue
-		}
-		go func(peerID string) {
-			topic := composeReadyTopic(peerID)
-			pubSub.Subscribe(topic, func(data []byte) {
-				logger.Info("Receive peer ready message", "topic", topic, "peerId", peerID)
-				peerReadyCh <- struct{}{}
-			})
-		}(peerID)
-
-	}
-
 	preParams, err := keygen.GeneratePreParams(5 * time.Minute)
 	if err != nil {
-		logger.Error("Generate pre params failed", err)
-		return nil
+		logger.Fatal("Generate pre params failed", err)
 	}
-
 	logger.Info("Starting new node, preparams is generated successfully!")
 
-	keys, _, err := consulClient.KV().Keys("ready", "", nil)
-	if err != nil {
-		logger.Error("Get ready keys failed", err)
-	}
-	if keys != nil {
-		// extract nodeID from keys using fmt.Sprintf("ready/%s", nodeID)
-		for _, key := range keys {
-			logger.Info("Printing keys", "key", key)
-			var peerNodeID string
-			_, err := fmt.Sscanf(key, "ready/%s", &peerNodeID)
-			if err != nil {
-				logger.Error("Parse ready key failed", err)
-			}
-
-			if nodeID != peerNodeID {
-				peerReadyCh <- struct{}{}
-			}
-		}
-
-	}
-
-	kv := &api.KVPair{
-		Key:   ComposeReadyKey(nodeID),
-		Value: []byte("ready"),
-	}
-
-	_, err = consulClient.KV().Put(kv, nil)
-	if err != nil {
-		logger.Error("Put ready key failed", err)
-	} else {
-		logger.Info("Put ready key successfully!", "key", ComposeReadyKey(nodeID))
-	}
+	peerRegistry.Ready()
+	go peerRegistry.WatchPeersReady()
 
 	return &Node{
 		nodeID:       nodeID,
@@ -123,10 +74,8 @@ func NewNode(
 		pubSub:       pubSub,
 		direct:       direct,
 		kvstore:      kvstore,
-		consulClient: consulClient,
 		preParams:    preParams,
-		peerReadyCh:  peerReadyCh,
-		readyCh:      make(chan struct{}),
+		peerRegistry: peerRegistry,
 	}
 }
 
@@ -138,21 +87,11 @@ func composeReadyTopic(nodeID string) string {
 	return fmt.Sprintf("%s-%s", nodeID, "ready")
 }
 
-func (p *Node) WaitPeersReady() {
-	p.pubSub.Publish(composeReadyTopic(p.nodeID), []byte("ready"))
-
-	for i := 0; i < len(p.peerIDs)-1; i++ {
-		<-p.peerReadyCh
-	}
-
-	for _, peerID := range p.peerIDs {
-		logger.Info("Peer status", "peerId", peerID, "status", "ready")
-	}
-
-	logger.Info("ALL PEERS ARE READY!", "peers", p.peerIDs)
-}
-
 func (p *Node) CreateKeyGenSession(walletID string, threshold int) (*KeygenSession, error) {
+	if !p.peerRegistry.ArePeersReady() {
+		return nil, fmt.Errorf("All peers are not ready!")
+	}
+
 	selfPartyID, allPartyIDs := p.generatePartyIDs(PurposeKeygen)
 	session := NewKeygenSession(
 		walletID,
@@ -173,6 +112,10 @@ func (p *Node) CreateSigningSession(
 	networkInternalCode string,
 	threshold int,
 ) (*SigningSession, error) {
+	if !p.peerRegistry.ArePeersReady() {
+		return nil, fmt.Errorf("All peers are not ready!")
+	}
+
 	selfPartyID, allPartyIDs := p.generatePartyIDs(PurposeKeygen)
 	session := NewSigningSession(
 		walletID,
@@ -206,9 +149,8 @@ func (p *Node) generatePartyIDs(purpose string) (self *tss.PartyID, all []*tss.P
 }
 
 func (p *Node) Close() {
-	logger.Info("Close is being  called")
-	_, err := p.consulClient.KV().Delete(ComposeReadyKey(p.nodeID), nil)
+	err := p.peerRegistry.Resign()
 	if err != nil {
-		logger.Error("Delete ready key failed", err)
+		logger.Error("Resign failed", err)
 	}
 }

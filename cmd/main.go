@@ -50,18 +50,19 @@ func main() {
 	pubsub := messaging.NewNATSPubSub(natsConn)
 	directMessaging := messaging.NewNatsDirectMessaging(natsConn)
 
-	logger.Info("Node is running", "nodeID", nodeID, "name", *nodeName)
+	logger.Info("Node is running", "peerID", nodeID, "name", *nodeName)
 
-	peerIDs := GetPeerIDs(peers)
+	peerNodeIDs := GetPeerIDs(peers)
+	peerRegistry := mpc.NewRegistry(nodeID, peerNodeIDs, consulClient.KV())
+
 	mpcNode := mpc.NewNode(
 		nodeID,
-		peerIDs,
+		peerNodeIDs,
 		pubsub,
 		directMessaging,
 		badgerKV,
-		consulClient,
+		peerRegistry,
 	)
-	mpcNode.WaitPeersReady()
 	defer mpcNode.Close()
 
 	eventConsumer := eventconsumer.NewEventConsumer(

@@ -32,7 +32,6 @@ func NewEventConsumer(node *mpc.Node, pubsub messaging.PubSub) EventConsumer {
 }
 
 func (ec *eventConsumer) Run() {
-	logger.Info("Event consumer is starting...!")
 	err := ec.consumeKeyGenerationEvent()
 	if err != nil {
 		log.Fatal("Failed to consume key reconstruction event", err)
@@ -42,6 +41,8 @@ func (ec *eventConsumer) Run() {
 	if err != nil {
 		log.Fatal("Failed to consume tx signing event", err)
 	}
+
+	logger.Info("MPC Event consumer started...!")
 }
 
 func (ec *eventConsumer) consumeKeyGenerationEvent() error {
