@@ -12,6 +12,7 @@ require (
 	github.com/hashicorp/consul/api v1.26.1
 	github.com/nats-io/nats.go v1.31.0
 	github.com/rs/zerolog v1.31.0
+	github.com/samber/lo v1.39.0
 	github.com/spf13/viper v1.18.0
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/mock v0.3.0

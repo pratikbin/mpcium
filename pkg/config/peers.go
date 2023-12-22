@@ -19,7 +19,7 @@ func LoadPeersFromConsul(kv *api.KV, prefix string) ([]Peer, error) {
 	}
 
 	fmt.Println("List of node IDs with the 'peers' prefix:")
-	peers := make([]Peer, 0, 10)
+	peers := make([]Peer, 0, len(pairs))
 	for _, pair := range pairs {
 		peers = append(peers, Peer{
 			ID: string(pair.Value),
