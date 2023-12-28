@@ -138,7 +138,8 @@ func main() {
 				generateUniquePeerID(),
 				generateUniquePeerID(),
 			}
-
+		} else {
+			nodeIDs = peers
 		}
 
 		pairs := make(map[string]string)
