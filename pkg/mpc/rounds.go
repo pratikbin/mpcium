@@ -26,8 +26,10 @@ const (
 	KEYSIGN5         = "SignRound5Message"
 	KEYSIGN6         = "SignRound6Message"
 	KEYSIGN7         = "SignRound7Message"
+	KEYSIGN8         = "SignRound8Message"
+	KEYSIGN9         = "SignRound9Message"
 	TSSKEYGENROUNDS  = 4
-	TSSKEYSIGNROUNDS = 8
+	TSSKEYSIGNROUNDS = 10
 )
 
 func GetMsgRound(msg []byte, partyID *tss.PartyID, isBroadcast bool) (RoundInfo, error) {
@@ -106,6 +108,16 @@ func GetMsgRound(msg []byte, partyID *tss.PartyID, isBroadcast bool) (RoundInfo,
 		return RoundInfo{
 			Index:    7,
 			RoundMsg: KEYSIGN7,
+		}, nil
+	case *signing.SignRound8Message:
+		return RoundInfo{
+			Index:    8,
+			RoundMsg: KEYSIGN8,
+		}, nil
+	case *signing.SignRound9Message:
+		return RoundInfo{
+			Index:    9,
+			RoundMsg: KEYSIGN9,
 		}, nil
 
 	default:

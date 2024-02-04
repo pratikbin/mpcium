@@ -113,7 +113,6 @@ func (s *SigningSession) Sign() {
 
 		select {
 		case msg := <-s.outCh:
-			logger.Info("Generating and handle tss message", "walletID", s.walletID)
 			s.handleTssMessage(msg)
 		case sig := <-s.endCh:
 			publicKey := *s.data.ECDSAPub
