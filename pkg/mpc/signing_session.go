@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	TypeSignSuccess = "mpc:sign:success"
+	SignSuccessTopic = "mpc.mpc_sign_success.completed"
 )
 
 type SigningSession struct {
@@ -49,6 +49,7 @@ func NewSigningSession(
 	threshold int,
 	preParams *keygen.LocalPreParams,
 	kvstore kvstore.KVStore,
+	succesQueue messaging.MessageQueue,
 ) *SigningSession {
 	return &SigningSession{
 		Session: Session{
@@ -70,6 +71,7 @@ func NewSigningSession(
 					return fmt.Sprintf("sign:direct:%s:%s", walletID, nodeID)
 				},
 			},
+			successQueue: succesQueue,
 		},
 		endCh:               make(chan common.SignatureData),
 		txID:                txID,
@@ -143,13 +145,15 @@ func (s *SigningSession) Sign() {
 				return
 			}
 
-			err = s.pubSub.Publish(TypeSignSuccess, bytes)
+			err = s.successQueue.Enqueue(SignSuccessTopic, bytes, &messaging.EnqueueOptions{
+				IdempotententKey: s.txID,
+			})
 			if err != nil {
 				s.ErrCh <- errors.Wrap(err, "Failed to publish sign success message")
 				return
 			}
 
-			logger.Info("[CONNECTED SIGN] Sign successfully", "walletID", s.walletID)
+			logger.Info("[SIGN] Sign successfully", "walletID", s.walletID)
 			err = s.Close()
 			if err != nil {
 				logger.Error("Failed to close session", err)

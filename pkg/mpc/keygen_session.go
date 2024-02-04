@@ -14,12 +14,17 @@ import (
 )
 
 const (
-	TypeGenerateWalletSuccess = "mpc:generate:success:%s"
+	TypeGenerateWalletSuccess = "mpc.mpc_keygen_success.%s"
 )
 
 type KeygenSession struct {
 	Session
 	endCh chan keygen.LocalPartySaveData
+}
+
+type KeygenSuccessEvent struct {
+	WalletID string `json:"wallet_id"`
+	PubKey   []byte `json:"pub_key"`
 }
 
 func NewKeygenSession(
@@ -31,6 +36,7 @@ func NewKeygenSession(
 	threshold int,
 	preParams *keygen.LocalPreParams,
 	kvstore kvstore.KVStore,
+	successQueue messaging.MessageQueue,
 ) *KeygenSession {
 	return &KeygenSession{
 		Session: Session{
@@ -52,6 +58,7 @@ func NewKeygenSession(
 					return fmt.Sprintf("keygen:direct:%s:%s", walletID, nodeID)
 				},
 			},
+			successQueue: successQueue,
 		},
 		endCh: make(chan keygen.LocalPartySaveData),
 	}
@@ -105,7 +112,20 @@ func (s *KeygenSession) GenerateKey() {
 				return
 			}
 
-			err = s.pubSub.Publish(fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID), pubKeyBytes)
+			successEvent := KeygenSuccessEvent{
+				WalletID: s.walletID,
+				PubKey:   pubKeyBytes,
+			}
+
+			successEventBytes, err := json.Marshal(successEvent)
+			if err != nil {
+				s.ErrCh <- fmt.Errorf("failed to marshal success event: %w", err)
+				return
+			}
+
+			err = s.successQueue.Enqueue(fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID), successEventBytes, &messaging.EnqueueOptions{
+				IdempotententKey: fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID),
+			})
 			if err != nil {
 				logger.Error("Failed to publish key generation success message", err)
 				s.ErrCh <- fmt.Errorf("Failed to publish key generation success message %w", err)

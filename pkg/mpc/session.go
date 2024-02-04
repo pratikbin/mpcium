@@ -31,8 +31,10 @@ type Session struct {
 	preParams *keygen.LocalPreParams
 	kvstore   kvstore.KVStore
 
-	broadcastSub  messaging.Subscription
-	directSub     messaging.Subscription
+	broadcastSub messaging.Subscription
+	directSub    messaging.Subscription
+	successQueue messaging.MessageQueue
+
 	topicComposer *TopicComposer
 }
 
@@ -147,6 +149,5 @@ func (s *Session) Close() error {
 	if err != nil {
 		return err
 	}
-
 	return nil
 }

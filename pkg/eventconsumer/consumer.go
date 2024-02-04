@@ -24,14 +24,24 @@ type eventConsumer struct {
 	node   *mpc.Node
 	pubsub messaging.PubSub
 
+	genKeySucecssQueue  messaging.MessageQueue
+	signingSuccessQueue messaging.MessageQueue
+
 	keyGenerationSub messaging.Subscription
 	signingSub       messaging.Subscription
 }
 
-func NewEventConsumer(node *mpc.Node, pubsub messaging.PubSub) EventConsumer {
+func NewEventConsumer(
+	node *mpc.Node,
+	pubsub messaging.PubSub,
+	genKeySucecssQueue messaging.MessageQueue,
+	signingSuccessQueue messaging.MessageQueue,
+) EventConsumer {
 	return &eventConsumer{
-		node:   node,
-		pubsub: pubsub,
+		node:                node,
+		pubsub:              pubsub,
+		genKeySucecssQueue:  genKeySucecssQueue,
+		signingSuccessQueue: signingSuccessQueue,
 	}
 }
 
@@ -54,7 +64,7 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		walletID := string(msg)
 		// TODO: threshold is configurable
 		threshold := 2
-		session, err := ec.node.CreateKeyGenSession(walletID, threshold)
+		session, err := ec.node.CreateKeyGenSession(walletID, threshold, ec.genKeySucecssQueue)
 		if err != nil {
 			logger.Error("Failed to create key generation session", err)
 			return
@@ -99,6 +109,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			msg.TxID,
 			msg.NetworkInternalCode,
 			threshold,
+			ec.signingSuccessQueue,
 		)
 		if err != nil {
 			logger.Error("Failed to create signing session", err)
