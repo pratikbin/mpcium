@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	TypeSignSuccess = "mpc:sign:success"
+	SignSuccessTopic = "mpc.mpc_sign_success.completed"
 )
 
 type SigningSession struct {
@@ -49,6 +49,7 @@ func NewSigningSession(
 	threshold int,
 	preParams *keygen.LocalPreParams,
 	kvstore kvstore.KVStore,
+	succesQueue messaging.MessageQueue,
 ) *SigningSession {
 	return &SigningSession{
 		Session: Session{
@@ -62,6 +63,15 @@ func NewSigningSession(
 			ErrCh:       make(chan error),
 			preParams:   preParams,
 			kvstore:     kvstore,
+			topicComposer: &TopicComposer{
+				ComposeBroadcastTopic: func() string {
+					return fmt.Sprintf("sign:broadcast:%s", walletID)
+				},
+				ComposeDirectTopic: func(nodeID string) string {
+					return fmt.Sprintf("sign:direct:%s:%s", walletID, nodeID)
+				},
+			},
+			successQueue: succesQueue,
 		},
 		endCh:               make(chan common.SignatureData),
 		txID:                txID,
@@ -93,7 +103,7 @@ func (s *SigningSession) Init(tx *big.Int) {
 	logger.Info("Initialized sigining session successfully!")
 }
 
-func (s *SigningSession) Sign() {
+func (s *SigningSession) Sign(done func()) {
 	logger.Info("Starting signing", "walletID", s.walletID)
 	go func() {
 		if err := s.party.Start(); err != nil {
@@ -105,7 +115,6 @@ func (s *SigningSession) Sign() {
 
 		select {
 		case msg := <-s.outCh:
-			logger.Info("Generating and handle tss message", "walletID", s.walletID)
 			s.handleTssMessage(msg)
 		case sig := <-s.endCh:
 			publicKey := *s.data.ECDSAPub
@@ -136,107 +145,23 @@ func (s *SigningSession) Sign() {
 				return
 			}
 
-			err = s.pubSub.Publish(TypeSignSuccess, bytes)
+			err = s.successQueue.Enqueue(SignSuccessTopic, bytes, &messaging.EnqueueOptions{
+				IdempotententKey: s.txID,
+			})
 			if err != nil {
 				s.ErrCh <- errors.Wrap(err, "Failed to publish sign success message")
 				return
 			}
 
-			logger.Info("Sign successfully", "walletID", s.walletID)
-		}
+			logger.Info("[SIGN] Sign successfully", "walletID", s.walletID)
+			err = s.Close()
+			if err != nil {
+				logger.Error("Failed to close session", err)
+			}
 
-	}
-}
-
-func (s *SigningSession) composeDirectMessageTopic(nodeID string) string {
-	return fmt.Sprintf("sign:direct:%s:%s", s.walletID, nodeID)
-}
-
-func (s *SigningSession) composeBroadcastTopic() string {
-	return fmt.Sprintf("sign:broadcast:%s", s.walletID)
-}
-
-func (s *SigningSession) handleTssMessage(tssMsg tss.Message) {
-	data, routing, err := tssMsg.WireBytes()
-	logger.Info("Received message", "routing", routing)
-	if err != nil {
-		s.ErrCh <- err
-		return
-	}
-
-	msg, err := MarshalTssMessage(s.walletID, data, routing.IsBroadcast, routing.From, routing.To)
-	if err != nil {
-		s.ErrCh <- fmt.Errorf("failed to marshal tss message: %w", err)
-		return
-	}
-	logger.Info("Preparing to send message to", "walletID", s.walletID, "to", routing.To, "isBroadcast", routing.IsBroadcast)
-	if routing.IsBroadcast && len(routing.To) == 0 {
-		logger.Info("Broadcasting message", "walletID", s.walletID, "from", s.selfPartyID, "routing", routing.To)
-		err := s.pubSub.Publish(s.composeBroadcastTopic(), msg)
-		if err != nil {
-			s.ErrCh <- err
+			done()
 			return
 		}
-	} else {
-		for _, to := range routing.To {
-			nodeID := PartyIDToNodeID(to)
-			topic := s.composeDirectMessageTopic(nodeID)
-			logger.Info("Direct message", "walletID", s.walletID, "from", s.selfPartyID, "to", to)
-			logger.Info("Sending direct message to destination topic", "topic", topic)
-			err := s.direct.Send(topic, msg)
-			if err != nil {
-				s.ErrCh <- fmt.Errorf("Failed to send direct message to %s: %w", topic, err)
-			}
 
-		}
-
-	}
-}
-
-func (s *SigningSession) ListenToIncomingMessage() {
-	go func() {
-		s.pubSub.Subscribe(s.composeBroadcastTopic(), func(msg []byte) {
-			logger.Info("Received tss message from broadcast channel")
-			s.receiveTssMessage(msg)
-		})
-
-	}()
-
-	nodeID := PartyIDToNodeID(s.selfPartyID)
-	logger.Info("Listening on target topic for incoming messages", "topic", s.composeDirectMessageTopic(nodeID))
-	targetID := s.composeDirectMessageTopic(nodeID)
-	s.direct.Listen(targetID, func(msg []byte) {
-		logger.Info("Received message from direct channel", "targetID", targetID)
-		s.receiveTssMessage(msg)
-	})
-
-}
-
-func (s *SigningSession) receiveTssMessage(rawMsg []byte) {
-	msg, err := UnmarshalTssMessage(rawMsg)
-	if err != nil {
-		s.ErrCh <- fmt.Errorf("Failed to unmarshal message: %w", err)
-		return
-	}
-
-	logger.Info("Received message", "from", msg.From, "to", msg.To, "isBroadcast", msg.IsBroadcast)
-	isBroadcast := msg.IsBroadcast && len(msg.To) == 0
-	isToSelf := len(msg.To) == 1 && ComparePartyIDs(msg.To[0], s.selfPartyID)
-
-	if isBroadcast || isToSelf {
-		go func() {
-			if isBroadcast {
-				logger.Info("Updating broadcast message", "to", msg.To)
-			} else if isToSelf {
-				logger.Info("Updating direct message to local node", "to", msg.To)
-			}
-
-			ok, err := s.party.UpdateFromBytes(msg.MsgBytes, msg.From, msg.IsBroadcast)
-			if !ok || err != nil {
-				logger.Error("Failed to update party", err, "walletID", s.walletID)
-				return
-			}
-
-		}()
 	}
 }

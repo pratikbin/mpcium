@@ -50,6 +50,15 @@ func main() {
 	defer natsConn.Close()
 	pubsub := messaging.NewNATSPubSub(natsConn)
 	directMessaging := messaging.NewNatsDirectMessaging(natsConn)
+	mqManager := messaging.NewNATsMessageQueueManager("mpc", []string{
+		"mpc.mpc_keygen_success.*",
+		"mpc.mpc_sign_success.*",
+	}, natsConn)
+
+	genKeySuccessQueue := mqManager.NewMessageQueue("mpc_keygen_success")
+	defer genKeySuccessQueue.Close()
+	singingSuccessQueue := mqManager.NewMessageQueue("mpc_sign_success")
+	defer singingSuccessQueue.Close()
 
 	logger.Info("Node is running", "peerID", nodeID, "name", *nodeName)
 
@@ -69,8 +78,11 @@ func main() {
 	eventConsumer := eventconsumer.NewEventConsumer(
 		mpcNode,
 		pubsub,
+		genKeySuccessQueue,
+		singingSuccessQueue,
 	)
 	eventConsumer.Run()
+	defer eventConsumer.Close()
 	// Create a channel to receive signals
 
 	signals := make(chan os.Signal, 1)

@@ -14,12 +14,17 @@ import (
 )
 
 const (
-	TypeGenerateWalletSuccess = "mpc:generate:success:%s"
+	TypeGenerateWalletSuccess = "mpc.mpc_keygen_success.%s"
 )
 
 type KeygenSession struct {
 	Session
 	endCh chan keygen.LocalPartySaveData
+}
+
+type KeygenSuccessEvent struct {
+	WalletID string `json:"wallet_id"`
+	PubKey   []byte `json:"pub_key"`
 }
 
 func NewKeygenSession(
@@ -31,6 +36,7 @@ func NewKeygenSession(
 	threshold int,
 	preParams *keygen.LocalPreParams,
 	kvstore kvstore.KVStore,
+	successQueue messaging.MessageQueue,
 ) *KeygenSession {
 	return &KeygenSession{
 		Session: Session{
@@ -44,21 +50,18 @@ func NewKeygenSession(
 			ErrCh:       make(chan error),
 			preParams:   preParams,
 			kvstore:     kvstore,
+			topicComposer: &TopicComposer{
+				ComposeBroadcastTopic: func() string {
+					return fmt.Sprintf("keygen:broadcast:%s", walletID)
+				},
+				ComposeDirectTopic: func(nodeID string) string {
+					return fmt.Sprintf("keygen:direct:%s:%s", walletID, nodeID)
+				},
+			},
+			successQueue: successQueue,
 		},
 		endCh: make(chan keygen.LocalPartySaveData),
 	}
-}
-
-func (s *KeygenSession) PartyID() *tss.PartyID {
-	return s.selfPartyID
-}
-
-func (s *KeygenSession) PartyIDs() []*tss.PartyID {
-	return s.partyIDs
-}
-
-func (s *KeygenSession) PartyCount() int {
-	return len(s.partyIDs)
 }
 
 func (s *KeygenSession) Init() {
@@ -66,56 +69,10 @@ func (s *KeygenSession) Init() {
 	ctx := tss.NewPeerContext(s.partyIDs)
 	params := tss.NewParameters(tss.S256(), ctx, s.selfPartyID, len(s.partyIDs), s.threshold)
 	s.party = keygen.NewLocalParty(params, s.outCh, s.endCh, *s.preParams)
-	logger.Info("Initialized session successfully")
-	logger.Infof("PartyID: %s is ready!", s.party.PartyID())
+	logger.Infof("[INITIALIZED] Initialized session successfully partyID: %s, peerIDs %s, walletID %s", s.selfPartyID, s.partyIDs, s.walletID)
 }
 
-func (s *KeygenSession) composeDirectMessageTopic(nodeID string) string {
-	return fmt.Sprintf("keygen:direct:%s:%s", s.walletID, nodeID)
-}
-
-func (s *KeygenSession) composeBroadcastTopic() string {
-	return fmt.Sprintf("keygen:broadcast:%s", s.walletID)
-}
-
-func (s *KeygenSession) handleTssMessage(keyshare tss.Message) {
-	data, routing, err := keyshare.WireBytes()
-	logger.Info("Received message", "routing", routing)
-	if err != nil {
-		s.ErrCh <- err
-		return
-	}
-
-	msg, err := MarshalTssMessage(s.walletID, data, routing.IsBroadcast, routing.From, routing.To)
-	if err != nil {
-		s.ErrCh <- fmt.Errorf("failed to marshal tss message: %w", err)
-		return
-	}
-	logger.Info("Preparing to send message to", "walletID", s.walletID, "to", routing.To, "isBroadcast", routing.IsBroadcast)
-	if routing.IsBroadcast && len(routing.To) == 0 {
-		logger.Info("Broadcasting message", "walletID", s.walletID, "from", s.PartyID(), "routing", routing.To)
-		err := s.pubSub.Publish(s.composeBroadcastTopic(), msg)
-		if err != nil {
-			s.ErrCh <- err
-			return
-		}
-	} else {
-		for _, to := range routing.To {
-			nodeID := PartyIDToNodeID(to)
-			topic := s.composeDirectMessageTopic(nodeID)
-			logger.Info("Direct message", "walletID", s.walletID, "from", s.PartyID(), "to", to)
-			logger.Info("Sending direct message to destination topic", "topic", topic)
-			err := s.direct.Send(topic, msg)
-			if err != nil {
-				s.ErrCh <- fmt.Errorf("Failed to send direct message to %s: %w", topic, err)
-			}
-
-		}
-
-	}
-}
-
-func (s *KeygenSession) GenerateKey() {
+func (s *KeygenSession) GenerateKey(done func()) {
 	logger.Info("Starting to generate key", "walletID", s.walletID)
 	go func() {
 		if err := s.party.Start(); err != nil {
@@ -126,7 +83,6 @@ func (s *KeygenSession) GenerateKey() {
 	for {
 		select {
 		case msg := <-s.outCh:
-			logger.Info("Received message for session", "walletID", s.walletID, "msg", msg)
 			s.handleTssMessage(msg)
 		case saveData := <-s.endCh:
 			keyBytes, err := json.Marshal(saveData)
@@ -156,62 +112,33 @@ func (s *KeygenSession) GenerateKey() {
 				return
 			}
 
-			s.pubSub.Publish(fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID), pubKeyBytes)
-		}
-
-	}
-
-}
-
-func (s *KeygenSession) ListenToIncomingMessage() {
-	go func() {
-		s.pubSub.Subscribe(s.composeBroadcastTopic(), func(msg []byte) {
-			logger.Info("Received tss message from broadcast channel")
-			s.receiveTssMessage(msg)
-		})
-
-	}()
-
-	nodeID := PartyIDToNodeID(s.selfPartyID)
-	logger.Info("Listening on target topic for incoming messages", "topic", s.composeDirectMessageTopic(nodeID))
-	targetID := s.composeDirectMessageTopic(nodeID)
-	s.direct.Listen(targetID, func(msg []byte) {
-		logger.Info("Received message from direct channel", "targetID", targetID)
-		s.receiveTssMessage(msg)
-	})
-
-}
-
-func (s *KeygenSession) receiveTssMessage(rawMsg []byte) {
-	msg, err := UnmarshalTssMessage(rawMsg)
-	if err != nil {
-		s.ErrCh <- fmt.Errorf("Failed to unmarshal message: %w", err)
-		return
-	}
-
-	logger.Info("Received message", "from", msg.From, "to", msg.To, "isBroadcast", msg.IsBroadcast)
-	isBroadcast := msg.IsBroadcast && len(msg.To) == 0
-	isToSelf := len(msg.To) == 1 && ComparePartyIDs(msg.To[0], s.selfPartyID)
-
-	if isBroadcast || isToSelf {
-		go func() {
-			if isBroadcast {
-				logger.Info("Updating broadcast message", "to", msg.To)
-			} else if isToSelf {
-				logger.Info("Updating direct message to local node", "to", msg.To)
+			successEvent := KeygenSuccessEvent{
+				WalletID: s.walletID,
+				PubKey:   pubKeyBytes,
 			}
 
-			ok, err := s.party.UpdateFromBytes(msg.MsgBytes, msg.From, msg.IsBroadcast)
-			if !ok || err != nil {
-				logger.Error("Failed to update party", err, "walletID", s.walletID)
+			successEventBytes, err := json.Marshal(successEvent)
+			if err != nil {
+				s.ErrCh <- fmt.Errorf("failed to marshal success event: %w", err)
 				return
 			}
 
-		}()
-	}
-}
+			err = s.successQueue.Enqueue(fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID), successEventBytes, &messaging.EnqueueOptions{
+				IdempotententKey: fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID),
+			})
+			if err != nil {
+				logger.Error("Failed to publish key generation success message", err)
+				s.ErrCh <- fmt.Errorf("Failed to publish key generation success message %w", err)
+				return
+			}
 
-// Close and clean up
-func (s *KeygenSession) Close() {
-	return
+			logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", s.walletID)
+			err = s.Close()
+			if err != nil {
+				logger.Error("Failed to close session", err)
+			}
+			done()
+			return
+		}
+	}
 }

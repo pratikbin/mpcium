@@ -87,7 +87,7 @@ func composeReadyTopic(nodeID string) string {
 	return fmt.Sprintf("%s-%s", nodeID, "ready")
 }
 
-func (p *Node) CreateKeyGenSession(walletID string, threshold int) (*KeygenSession, error) {
+func (p *Node) CreateKeyGenSession(walletID string, threshold int, successQueue messaging.MessageQueue) (*KeygenSession, error) {
 	if !p.peerRegistry.ArePeersReady() {
 		return nil, fmt.Errorf("All peers are not ready!")
 	}
@@ -102,6 +102,7 @@ func (p *Node) CreateKeyGenSession(walletID string, threshold int) (*KeygenSessi
 		threshold,
 		p.preParams,
 		p.kvstore,
+		successQueue,
 	)
 	return session, nil
 }
@@ -111,6 +112,7 @@ func (p *Node) CreateSigningSession(
 	txID string,
 	networkInternalCode string,
 	threshold int,
+	successQueue messaging.MessageQueue,
 ) (*SigningSession, error) {
 	if !p.peerRegistry.ArePeersReady() {
 		return nil, fmt.Errorf("All peers are not ready!")
@@ -128,6 +130,7 @@ func (p *Node) CreateSigningSession(
 		threshold,
 		p.preParams,
 		p.kvstore,
+		successQueue,
 	)
 
 	return session, nil

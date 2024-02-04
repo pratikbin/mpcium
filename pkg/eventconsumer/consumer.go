@@ -1,6 +1,7 @@
 package eventconsumer
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"math/big"
@@ -17,17 +18,31 @@ const (
 
 type EventConsumer interface {
 	Run()
+	Close() error
 }
 
 type eventConsumer struct {
 	node   *mpc.Node
 	pubsub messaging.PubSub
+
+	genKeySucecssQueue  messaging.MessageQueue
+	signingSuccessQueue messaging.MessageQueue
+
+	keyGenerationSub messaging.Subscription
+	signingSub       messaging.Subscription
 }
 
-func NewEventConsumer(node *mpc.Node, pubsub messaging.PubSub) EventConsumer {
+func NewEventConsumer(
+	node *mpc.Node,
+	pubsub messaging.PubSub,
+	genKeySucecssQueue messaging.MessageQueue,
+	signingSuccessQueue messaging.MessageQueue,
+) EventConsumer {
 	return &eventConsumer{
-		node:   node,
-		pubsub: pubsub,
+		node:                node,
+		pubsub:              pubsub,
+		genKeySucecssQueue:  genKeySucecssQueue,
+		signingSuccessQueue: signingSuccessQueue,
 	}
 }
 
@@ -46,36 +61,43 @@ func (ec *eventConsumer) Run() {
 }
 
 func (ec *eventConsumer) consumeKeyGenerationEvent() error {
-	return ec.pubsub.Subscribe(MPCGenerateEvent, func(msg []byte) {
+	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(msg []byte) {
 		walletID := string(msg)
 		// TODO: threshold is configurable
 		threshold := 2
-		session, err := ec.node.CreateKeyGenSession(walletID, threshold)
+		session, err := ec.node.CreateKeyGenSession(walletID, threshold, ec.genKeySucecssQueue)
 		if err != nil {
 			logger.Error("Failed to create key generation session", err)
 			return
 		}
 
 		session.Init()
+		ctx, done := context.WithCancel(context.Background())
 		go func() {
 			for {
 				select {
+				case <-ctx.Done():
+					return
 				case err := <-session.ErrCh:
 					logger.Error("Keygen session error", err)
 				}
 			}
-
 		}()
 
-		go session.GenerateKey()
+		go session.GenerateKey(done)
 		// TODO -> done and close channel
 		session.ListenToIncomingMessage()
-
 	})
+
+	ec.keyGenerationSub = sub
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (ec *eventConsumer) consumeTxSigningEvent() error {
-	return ec.pubsub.Subscribe(MPCSignEvent, func(raw []byte) {
+	sub, err := ec.pubsub.Subscribe(MPCSignEvent, func(raw []byte) {
 		var msg SignTxMessage
 		err := json.Unmarshal(raw, &msg)
 		if err != nil {
@@ -90,6 +112,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			msg.TxID,
 			msg.NetworkInternalCode,
 			threshold,
+			ec.signingSuccessQueue,
 		)
 		if err != nil {
 			logger.Error("Failed to create signing session", err)
@@ -99,9 +122,12 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		txBigInt := new(big.Int).SetBytes(msg.Tx)
 		session.Init(txBigInt)
 
+		ctx, done := context.WithCancel(context.Background())
 		go func() {
 			for {
 				select {
+				case <-ctx.Done():
+					return
 				case err := <-session.ErrCh:
 					logger.Error("Signing session error", err)
 				}
@@ -109,8 +135,29 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		}()
 
-		go session.Sign()
+		go session.Sign(done)
 		// TODO -> done and close channel
 		session.ListenToIncomingMessage()
 	})
+
+	ec.signingSub = sub
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Close and clean up
+func (ec *eventConsumer) Close() error {
+	err := ec.keyGenerationSub.Unsubscribe()
+	if err != nil {
+		return err
+	}
+	err = ec.signingSub.Unsubscribe()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
