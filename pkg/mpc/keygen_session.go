@@ -72,7 +72,7 @@ func (s *KeygenSession) Init() {
 	logger.Infof("[INITIALIZED] Initialized session successfully partyID: %s, peerIDs %s, walletID %s", s.selfPartyID, s.partyIDs, s.walletID)
 }
 
-func (s *KeygenSession) GenerateKey() {
+func (s *KeygenSession) GenerateKey(done func()) {
 	logger.Info("Starting to generate key", "walletID", s.walletID)
 	go func() {
 		if err := s.party.Start(); err != nil {
@@ -137,7 +137,7 @@ func (s *KeygenSession) GenerateKey() {
 			if err != nil {
 				logger.Error("Failed to close session", err)
 			}
-
+			done()
 			return
 		}
 	}

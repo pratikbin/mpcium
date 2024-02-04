@@ -103,7 +103,7 @@ func (s *SigningSession) Init(tx *big.Int) {
 	logger.Info("Initialized sigining session successfully!")
 }
 
-func (s *SigningSession) Sign() {
+func (s *SigningSession) Sign(done func()) {
 	logger.Info("Starting signing", "walletID", s.walletID)
 	go func() {
 		if err := s.party.Start(); err != nil {
@@ -158,6 +158,8 @@ func (s *SigningSession) Sign() {
 			if err != nil {
 				logger.Error("Failed to close session", err)
 			}
+
+			done()
 			return
 		}
 

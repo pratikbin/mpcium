@@ -1,6 +1,7 @@
 package eventconsumer
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"math/big"
@@ -71,17 +72,19 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		}
 
 		session.Init()
+		ctx, done := context.WithCancel(context.Background())
 		go func() {
 			for {
 				select {
+				case <-ctx.Done():
+					return
 				case err := <-session.ErrCh:
 					logger.Error("Keygen session error", err)
 				}
 			}
-
 		}()
 
-		go session.GenerateKey()
+		go session.GenerateKey(done)
 		// TODO -> done and close channel
 		session.ListenToIncomingMessage()
 	})
@@ -119,9 +122,12 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		txBigInt := new(big.Int).SetBytes(msg.Tx)
 		session.Init(txBigInt)
 
+		ctx, done := context.WithCancel(context.Background())
 		go func() {
 			for {
 				select {
+				case <-ctx.Done():
+					return
 				case err := <-session.ErrCh:
 					logger.Error("Signing session error", err)
 				}
@@ -129,7 +135,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		}()
 
-		go session.Sign()
+		go session.Sign(done)
 		// TODO -> done and close channel
 		session.ListenToIncomingMessage()
 	})
