@@ -22,7 +22,7 @@ func NewNatsDirectMessaging(natsConn *nats.Conn) DirectMessaging {
 }
 
 func (d *natsDirectMessaging) Send(id string, message []byte) error {
-	_, err := d.natsConn.Request(id, message, 1*time.Second)
+	_, err := d.natsConn.Request(id, message, 3*time.Second)
 	if err != nil {
 		return err
 	}

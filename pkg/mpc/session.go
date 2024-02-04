@@ -3,6 +3,7 @@ package mpc
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/tss"
@@ -36,6 +37,7 @@ type Session struct {
 	successQueue messaging.MessageQueue
 
 	topicComposer *TopicComposer
+	mu            sync.Mutex
 }
 
 func (s *Session) PartyID() *tss.PartyID {
@@ -105,6 +107,8 @@ func (s *Session) receiveTssMessage(rawMsg []byte) {
 	isToSelf := len(msg.To) == 1 && ComparePartyIDs(msg.To[0], s.selfPartyID)
 
 	if isBroadcast || isToSelf {
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		ok, err := s.party.UpdateFromBytes(msg.MsgBytes, msg.From, msg.IsBroadcast)
 		if !ok || err != nil {
 			logger.Error("Failed to update party", err, "walletID", s.walletID)
