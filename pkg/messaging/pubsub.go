@@ -1,7 +1,6 @@
 package messaging
 
 import (
-	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/nats-io/nats.go"
 )
 
@@ -19,7 +18,6 @@ func NewNATSPubSub(natsConn *nats.Conn) PubSub {
 }
 
 func (n *natsPubSub) Publish(topic string, message []byte) error {
-	logger.Infof("Publishing to topic %s", topic)
 	return n.natsConn.Publish(topic, message)
 }
 

@@ -70,7 +70,6 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		go session.GenerateKey()
 		// TODO -> done and close channel
 		session.ListenToIncomingMessage()
-
 	})
 }
 

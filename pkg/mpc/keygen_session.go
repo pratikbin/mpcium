@@ -4,9 +4,11 @@ import (
 	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/cryptoniumX/mpcium/pkg/common/errors"
 	"github.com/cryptoniumX/mpcium/pkg/encoding"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
@@ -66,8 +68,7 @@ func (s *KeygenSession) Init() {
 	ctx := tss.NewPeerContext(s.partyIDs)
 	params := tss.NewParameters(tss.S256(), ctx, s.selfPartyID, len(s.partyIDs), s.threshold)
 	s.party = keygen.NewLocalParty(params, s.outCh, s.endCh, *s.preParams)
-	logger.Info("Initialized session successfully")
-	logger.Infof("PartyID: %s is ready!", s.party.PartyID())
+	logger.Infof("[INITIALIZED] Initialized session successfully partyID: %s, peerIDs %s, walletID %s", s.selfPartyID, s.partyIDs, s.walletID)
 }
 
 func (s *KeygenSession) composeDirectMessageTopic(nodeID string) string {
@@ -80,7 +81,6 @@ func (s *KeygenSession) composeBroadcastTopic() string {
 
 func (s *KeygenSession) handleTssMessage(keyshare tss.Message) {
 	data, routing, err := keyshare.WireBytes()
-	logger.Info("Received message", "routing", routing)
 	if err != nil {
 		s.ErrCh <- err
 		return
@@ -91,9 +91,7 @@ func (s *KeygenSession) handleTssMessage(keyshare tss.Message) {
 		s.ErrCh <- fmt.Errorf("failed to marshal tss message: %w", err)
 		return
 	}
-	logger.Info("Preparing to send message to", "walletID", s.walletID, "to", routing.To, "isBroadcast", routing.IsBroadcast)
 	if routing.IsBroadcast && len(routing.To) == 0 {
-		logger.Info("Broadcasting message", "walletID", s.walletID, "from", s.PartyID(), "routing", routing.To)
 		err := s.pubSub.Publish(s.composeBroadcastTopic(), msg)
 		if err != nil {
 			s.ErrCh <- err
@@ -103,8 +101,6 @@ func (s *KeygenSession) handleTssMessage(keyshare tss.Message) {
 		for _, to := range routing.To {
 			nodeID := PartyIDToNodeID(to)
 			topic := s.composeDirectMessageTopic(nodeID)
-			logger.Info("Direct message", "walletID", s.walletID, "from", s.PartyID(), "to", to)
-			logger.Info("Sending direct message to destination topic", "topic", topic)
 			err := s.direct.Send(topic, msg)
 			if err != nil {
 				s.ErrCh <- fmt.Errorf("Failed to send direct message to %s: %w", topic, err)
@@ -126,7 +122,6 @@ func (s *KeygenSession) GenerateKey() {
 	for {
 		select {
 		case msg := <-s.outCh:
-			logger.Info("Received message for session", "walletID", s.walletID, "msg", msg)
 			s.handleTssMessage(msg)
 		case saveData := <-s.endCh:
 			keyBytes, err := json.Marshal(saveData)
@@ -156,28 +151,31 @@ func (s *KeygenSession) GenerateKey() {
 				return
 			}
 
-			s.pubSub.Publish(fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID), pubKeyBytes)
+			err = s.pubSub.Publish(fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID), pubKeyBytes)
+			if err != nil {
+				logger.Error("Failed to publish key generation success message", err)
+				s.ErrCh <- fmt.Errorf("Failed to publish key generation success message %w", err)
+				return
+			}
+
+			logger.Info("[COMPLETED] Key generation completed successfully", "walletID", s.walletID)
+			return
 		}
-
 	}
-
 }
 
 func (s *KeygenSession) ListenToIncomingMessage() {
 	go func() {
 		s.pubSub.Subscribe(s.composeBroadcastTopic(), func(msg []byte) {
-			logger.Info("Received tss message from broadcast channel")
 			s.receiveTssMessage(msg)
 		})
 
 	}()
 
 	nodeID := PartyIDToNodeID(s.selfPartyID)
-	logger.Info("Listening on target topic for incoming messages", "topic", s.composeDirectMessageTopic(nodeID))
 	targetID := s.composeDirectMessageTopic(nodeID)
 	s.direct.Listen(targetID, func(msg []byte) {
-		logger.Info("Received message from direct channel", "targetID", targetID)
-		s.receiveTssMessage(msg)
+		go s.receiveTssMessage(msg) // async for avoid timeout
 	})
 
 }
@@ -189,25 +187,28 @@ func (s *KeygenSession) receiveTssMessage(rawMsg []byte) {
 		return
 	}
 
-	logger.Info("Received message", "from", msg.From, "to", msg.To, "isBroadcast", msg.IsBroadcast)
+	toIDs := make([]string, len(msg.To))
+	for i, id := range msg.To {
+		toIDs[i] = id.String()
+	}
+
+	round, err := GetMsgRound(msg.MsgBytes, s.selfPartyID, msg.IsBroadcast)
+	if err != nil {
+		s.ErrCh <- errors.Wrap(err, "Broken TSS Share")
+		return
+	}
+
+	logger.Info("Received message", "from", msg.From.String(), "to", strings.Join(toIDs, ","), "isBroadcast", msg.IsBroadcast, "round", round.RoundMsg)
 	isBroadcast := msg.IsBroadcast && len(msg.To) == 0
 	isToSelf := len(msg.To) == 1 && ComparePartyIDs(msg.To[0], s.selfPartyID)
 
 	if isBroadcast || isToSelf {
-		go func() {
-			if isBroadcast {
-				logger.Info("Updating broadcast message", "to", msg.To)
-			} else if isToSelf {
-				logger.Info("Updating direct message to local node", "to", msg.To)
-			}
+		ok, err := s.party.UpdateFromBytes(msg.MsgBytes, msg.From, msg.IsBroadcast)
+		if !ok || err != nil {
+			logger.Error("Failed to update party", err, "walletID", s.walletID)
+			return
+		}
 
-			ok, err := s.party.UpdateFromBytes(msg.MsgBytes, msg.From, msg.IsBroadcast)
-			if !ok || err != nil {
-				logger.Error("Failed to update party", err, "walletID", s.walletID)
-				return
-			}
-
-		}()
 	}
 }
 
