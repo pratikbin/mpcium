@@ -17,11 +17,15 @@ const (
 
 type EventConsumer interface {
 	Run()
+	Close() error
 }
 
 type eventConsumer struct {
 	node   *mpc.Node
 	pubsub messaging.PubSub
+
+	keyGenerationSub messaging.Subscription
+	signingSub       messaging.Subscription
 }
 
 func NewEventConsumer(node *mpc.Node, pubsub messaging.PubSub) EventConsumer {
@@ -46,7 +50,7 @@ func (ec *eventConsumer) Run() {
 }
 
 func (ec *eventConsumer) consumeKeyGenerationEvent() error {
-	return ec.pubsub.Subscribe(MPCGenerateEvent, func(msg []byte) {
+	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(msg []byte) {
 		walletID := string(msg)
 		// TODO: threshold is configurable
 		threshold := 2
@@ -71,10 +75,16 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		// TODO -> done and close channel
 		session.ListenToIncomingMessage()
 	})
+
+	ec.keyGenerationSub = sub
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (ec *eventConsumer) consumeTxSigningEvent() error {
-	return ec.pubsub.Subscribe(MPCSignEvent, func(raw []byte) {
+	sub, err := ec.pubsub.Subscribe(MPCSignEvent, func(raw []byte) {
 		var msg SignTxMessage
 		err := json.Unmarshal(raw, &msg)
 		if err != nil {
@@ -112,4 +122,25 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		// TODO -> done and close channel
 		session.ListenToIncomingMessage()
 	})
+
+	ec.signingSub = sub
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Close and clean up
+func (ec *eventConsumer) Close() error {
+	err := ec.keyGenerationSub.Unsubscribe()
+	if err != nil {
+		return err
+	}
+	err = ec.signingSub.Unsubscribe()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

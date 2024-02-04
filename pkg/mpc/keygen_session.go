@@ -4,11 +4,9 @@ import (
 	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/tss"
-	"github.com/cryptoniumX/mpcium/pkg/common/errors"
 	"github.com/cryptoniumX/mpcium/pkg/encoding"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
@@ -159,6 +157,10 @@ func (s *KeygenSession) GenerateKey() {
 			}
 
 			logger.Info("[COMPLETED] Key generation completed successfully", "walletID", s.walletID)
+			err = s.Close()
+			if err != nil {
+				logger.Error("Failed to close session", err)
+			}
 			return
 		}
 	}
@@ -166,53 +168,40 @@ func (s *KeygenSession) GenerateKey() {
 
 func (s *KeygenSession) ListenToIncomingMessage() {
 	go func() {
-		s.pubSub.Subscribe(s.composeBroadcastTopic(), func(msg []byte) {
+		sub, err := s.pubSub.Subscribe(s.composeBroadcastTopic(), func(msg []byte) {
 			s.receiveTssMessage(msg)
 		})
 
+		if err != nil {
+			s.ErrCh <- fmt.Errorf("Failed to subscribe to broadcast topic %s: %w", s.composeBroadcastTopic(), err)
+			return
+		}
+
+		s.broadcastSub = sub
 	}()
 
 	nodeID := PartyIDToNodeID(s.selfPartyID)
 	targetID := s.composeDirectMessageTopic(nodeID)
-	s.direct.Listen(targetID, func(msg []byte) {
+	sub, err := s.direct.Listen(targetID, func(msg []byte) {
 		go s.receiveTssMessage(msg) // async for avoid timeout
 	})
-
-}
-
-func (s *KeygenSession) receiveTssMessage(rawMsg []byte) {
-	msg, err := UnmarshalTssMessage(rawMsg)
 	if err != nil {
-		s.ErrCh <- fmt.Errorf("Failed to unmarshal message: %w", err)
-		return
+		s.ErrCh <- fmt.Errorf("Failed to subscribe to direct topic %s: %w", targetID, err)
 	}
+	s.directSub = sub
 
-	toIDs := make([]string, len(msg.To))
-	for i, id := range msg.To {
-		toIDs[i] = id.String()
-	}
-
-	round, err := GetMsgRound(msg.MsgBytes, s.selfPartyID, msg.IsBroadcast)
-	if err != nil {
-		s.ErrCh <- errors.Wrap(err, "Broken TSS Share")
-		return
-	}
-
-	logger.Info("Received message", "from", msg.From.String(), "to", strings.Join(toIDs, ","), "isBroadcast", msg.IsBroadcast, "round", round.RoundMsg)
-	isBroadcast := msg.IsBroadcast && len(msg.To) == 0
-	isToSelf := len(msg.To) == 1 && ComparePartyIDs(msg.To[0], s.selfPartyID)
-
-	if isBroadcast || isToSelf {
-		ok, err := s.party.UpdateFromBytes(msg.MsgBytes, msg.From, msg.IsBroadcast)
-		if !ok || err != nil {
-			logger.Error("Failed to update party", err, "walletID", s.walletID)
-			return
-		}
-
-	}
 }
 
 // Close and clean up
-func (s *KeygenSession) Close() {
-	return
+func (s *KeygenSession) Close() error {
+	err := s.broadcastSub.Unsubscribe()
+	if err != nil {
+		return err
+	}
+	err = s.directSub.Unsubscribe()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

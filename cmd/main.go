@@ -71,6 +71,7 @@ func main() {
 		pubsub,
 	)
 	eventConsumer.Run()
+	defer eventConsumer.Close()
 	// Create a channel to receive signals
 
 	signals := make(chan os.Signal, 1)

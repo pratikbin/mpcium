@@ -7,7 +7,7 @@ import (
 )
 
 type DirectMessaging interface {
-	Listen(target string, handler func(data []byte)) error
+	Listen(target string, handler func(data []byte)) (Subscription, error)
 	Send(target string, data []byte) error
 }
 
@@ -29,13 +29,14 @@ func (d *natsDirectMessaging) Send(id string, message []byte) error {
 	return nil
 }
 
-func (d *natsDirectMessaging) Listen(id string, handler func(data []byte)) error {
-	_, err := d.natsConn.Subscribe(id, func(m *nats.Msg) {
+func (d *natsDirectMessaging) Listen(id string, handler func(data []byte)) (Subscription, error) {
+	sub, err := d.natsConn.Subscribe(id, func(m *nats.Msg) {
 		handler(m.Data)
 		m.Respond([]byte("OK"))
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+
+	return &natsSubscription{subscription: sub}, nil
 }

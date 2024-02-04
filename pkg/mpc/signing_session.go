@@ -143,6 +143,7 @@ func (s *SigningSession) Sign() {
 			}
 
 			logger.Info("Sign successfully", "walletID", s.walletID)
+			return
 		}
 
 	}
@@ -182,7 +183,6 @@ func (s *SigningSession) handleTssMessage(tssMsg tss.Message) {
 			nodeID := PartyIDToNodeID(to)
 			topic := s.composeDirectMessageTopic(nodeID)
 			logger.Info("Direct message", "walletID", s.walletID, "from", s.selfPartyID, "to", to)
-			logger.Info("Sending direct message to destination topic", "topic", topic)
 			err := s.direct.Send(topic, msg)
 			if err != nil {
 				s.ErrCh <- fmt.Errorf("Failed to send direct message to %s: %w", topic, err)
@@ -196,7 +196,6 @@ func (s *SigningSession) handleTssMessage(tssMsg tss.Message) {
 func (s *SigningSession) ListenToIncomingMessage() {
 	go func() {
 		s.pubSub.Subscribe(s.composeBroadcastTopic(), func(msg []byte) {
-			logger.Info("Received tss message from broadcast channel")
 			s.receiveTssMessage(msg)
 		})
 
@@ -206,8 +205,7 @@ func (s *SigningSession) ListenToIncomingMessage() {
 	logger.Info("Listening on target topic for incoming messages", "topic", s.composeDirectMessageTopic(nodeID))
 	targetID := s.composeDirectMessageTopic(nodeID)
 	s.direct.Listen(targetID, func(msg []byte) {
-		logger.Info("Received message from direct channel", "targetID", targetID)
-		s.receiveTssMessage(msg)
+		go s.receiveTssMessage(msg) // async to avoid blocking the direct listener
 	})
 
 }
@@ -224,19 +222,17 @@ func (s *SigningSession) receiveTssMessage(rawMsg []byte) {
 	isToSelf := len(msg.To) == 1 && ComparePartyIDs(msg.To[0], s.selfPartyID)
 
 	if isBroadcast || isToSelf {
-		go func() {
-			if isBroadcast {
-				logger.Info("Updating broadcast message", "to", msg.To)
-			} else if isToSelf {
-				logger.Info("Updating direct message to local node", "to", msg.To)
-			}
+		if isBroadcast {
+			logger.Info("Updating broadcast message", "to", msg.To)
+		} else if isToSelf {
+			logger.Info("Updating direct message to local node", "to", msg.To)
+		}
 
-			ok, err := s.party.UpdateFromBytes(msg.MsgBytes, msg.From, msg.IsBroadcast)
-			if !ok || err != nil {
-				logger.Error("Failed to update party", err, "walletID", s.walletID)
-				return
-			}
+		ok, err := s.party.UpdateFromBytes(msg.MsgBytes, msg.From, msg.IsBroadcast)
+		if !ok || err != nil {
+			logger.Error("Failed to update party", err, "walletID", s.walletID)
+			return
+		}
 
-		}()
 	}
 }
