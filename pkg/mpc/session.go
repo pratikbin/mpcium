@@ -12,6 +12,11 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 )
 
+type TopicComposer struct {
+	ComposeBroadcastTopic func() string
+	ComposeDirectTopic    func(nodeID string) string
+}
+
 type Session struct {
 	walletID    string
 	pubSub      messaging.PubSub
@@ -26,8 +31,53 @@ type Session struct {
 	preParams *keygen.LocalPreParams
 	kvstore   kvstore.KVStore
 
-	broadcastSub messaging.Subscription
-	directSub    messaging.Subscription
+	broadcastSub  messaging.Subscription
+	directSub     messaging.Subscription
+	topicComposer *TopicComposer
+}
+
+func (s *Session) PartyID() *tss.PartyID {
+	return s.selfPartyID
+}
+
+func (s *Session) PartyIDs() []*tss.PartyID {
+	return s.partyIDs
+}
+
+func (s *Session) PartyCount() int {
+	return len(s.partyIDs)
+}
+
+func (s *Session) handleTssMessage(keyshare tss.Message) {
+	data, routing, err := keyshare.WireBytes()
+	if err != nil {
+		s.ErrCh <- err
+		return
+	}
+
+	msg, err := MarshalTssMessage(s.walletID, data, routing.IsBroadcast, routing.From, routing.To)
+	if err != nil {
+		s.ErrCh <- fmt.Errorf("failed to marshal tss message: %w", err)
+		return
+	}
+	if routing.IsBroadcast && len(routing.To) == 0 {
+		err := s.pubSub.Publish(s.topicComposer.ComposeBroadcastTopic(), msg)
+		if err != nil {
+			s.ErrCh <- err
+			return
+		}
+	} else {
+		for _, to := range routing.To {
+			nodeID := PartyIDToNodeID(to)
+			topic := s.topicComposer.ComposeDirectTopic(nodeID)
+			err := s.direct.Send(topic, msg)
+			if err != nil {
+				s.ErrCh <- fmt.Errorf("Failed to send direct message to %s: %w", topic, err)
+			}
+
+		}
+
+	}
 }
 
 func (s *Session) receiveTssMessage(rawMsg []byte) {
@@ -60,4 +110,43 @@ func (s *Session) receiveTssMessage(rawMsg []byte) {
 		}
 
 	}
+}
+
+func (s *Session) ListenToIncomingMessage() {
+	go func() {
+		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(msg []byte) {
+			s.receiveTssMessage(msg)
+		})
+
+		if err != nil {
+			s.ErrCh <- fmt.Errorf("Failed to subscribe to broadcast topic %s: %w", s.topicComposer.ComposeBroadcastTopic(), err)
+			return
+		}
+
+		s.broadcastSub = sub
+	}()
+
+	nodeID := PartyIDToNodeID(s.selfPartyID)
+	targetID := s.topicComposer.ComposeDirectTopic(nodeID)
+	sub, err := s.direct.Listen(targetID, func(msg []byte) {
+		go s.receiveTssMessage(msg) // async for avoid timeout
+	})
+	if err != nil {
+		s.ErrCh <- fmt.Errorf("Failed to subscribe to direct topic %s: %w", targetID, err)
+	}
+	s.directSub = sub
+
+}
+
+func (s *Session) Close() error {
+	err := s.broadcastSub.Unsubscribe()
+	if err != nil {
+		return err
+	}
+	err = s.directSub.Unsubscribe()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
