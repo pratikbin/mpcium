@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
-	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
+	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/encoding"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
@@ -19,7 +19,7 @@ const (
 
 type KeygenSession struct {
 	Session
-	endCh chan keygen.LocalPartySaveData
+	endCh chan *keygen.LocalPartySaveData
 }
 
 type KeygenSuccessEvent struct {
@@ -60,7 +60,7 @@ func NewKeygenSession(
 			},
 			successQueue: successQueue,
 		},
-		endCh: make(chan keygen.LocalPartySaveData),
+		endCh: make(chan *keygen.LocalPartySaveData),
 	}
 }
 

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/bnb-chain/tss-lib/v2/tss"
 )
 
 type TssMessage struct {

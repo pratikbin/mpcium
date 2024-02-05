@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/bnb-chain/tss-lib/common"
-	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
-	"github.com/bnb-chain/tss-lib/ecdsa/signing"
-	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/bnb-chain/tss-lib/v2/common"
+	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
+	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
+	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/common/errors"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
@@ -22,7 +22,7 @@ const (
 
 type SigningSession struct {
 	Session
-	endCh               chan common.SignatureData
+	endCh               chan *common.SignatureData
 	data                *keygen.LocalPartySaveData
 	tx                  *big.Int
 	txID                string
@@ -73,7 +73,7 @@ func NewSigningSession(
 			},
 			successQueue: succesQueue,
 		},
-		endCh:               make(chan common.SignatureData),
+		endCh:               make(chan *common.SignatureData),
 		txID:                txID,
 		networkInternalCode: networkInternalCode,
 	}

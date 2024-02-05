@@ -1,9 +1,9 @@
 package mpc
 
 import (
-	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
-	"github.com/bnb-chain/tss-lib/ecdsa/signing"
-	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
+	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
+	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/common/errors"
 )
 

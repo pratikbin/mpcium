@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
-	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
+	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/common/errors"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
