@@ -84,9 +84,8 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 			}
 		}()
 
-		go session.GenerateKey(done)
-		// TODO -> done and close channel
 		session.ListenToIncomingMessage()
+		session.GenerateKey(done)
 	})
 
 	ec.keyGenerationSub = sub
@@ -135,9 +134,8 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		}()
 
-		go session.Sign(done)
-		// TODO -> done and close channel
 		session.ListenToIncomingMessage()
+		session.Sign(done)
 	})
 
 	ec.signingSub = sub
