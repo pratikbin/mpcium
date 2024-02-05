@@ -3,6 +3,8 @@ package messaging
 import (
 	"time"
 
+	"github.com/avast/retry-go"
+	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/nats-io/nats.go"
 )
 
@@ -22,11 +24,24 @@ func NewNatsDirectMessaging(natsConn *nats.Conn) DirectMessaging {
 }
 
 func (d *natsDirectMessaging) Send(id string, message []byte) error {
-	_, err := d.natsConn.Request(id, message, 3*time.Second)
-	if err != nil {
-		return err
-	}
-	return nil
+	var retryCount = 0
+	err := retry.Do(
+		func() error {
+			_, err := d.natsConn.Request(id, message, 3*time.Second)
+			if err != nil {
+				return err
+			}
+			return nil
+		},
+		retry.Attempts(3),
+		retry.Delay(50*time.Millisecond),
+		retry.DelayType(retry.FixedDelay),
+		retry.OnRetry(func(n uint, err error) {
+			logger.Error("Failed to send direct message message", err, "retryCount", retryCount)
+		}),
+	)
+
+	return err
 }
 
 func (d *natsDirectMessaging) Listen(id string, handler func(data []byte)) (Subscription, error) {

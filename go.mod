@@ -3,6 +3,7 @@ module github.com/cryptoniumX/mpcium
 go 1.21.0
 
 require (
+	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/bnb-chain/tss-lib v1.5.0
 	github.com/btcsuite/btcd v0.0.0-20190629003639-c26ffa870fd8
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0
