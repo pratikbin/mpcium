@@ -3,6 +3,7 @@ package mpc
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cryptoniumX/mpcium/pkg/infra"
@@ -12,7 +13,7 @@ import (
 )
 
 const (
-	ReadinessCheckPeriod = 5 * time.Second
+	ReadinessCheckPeriod = 1 * time.Second
 )
 
 type PeerRegistry interface {
@@ -21,15 +22,16 @@ type PeerRegistry interface {
 	WatchPeersReady()
 	// Resign is called by the node when it is going to shutdown
 	Resign() error
+	GetReadyPeersCount() int64
 }
 
 type registry struct {
 	nodeID      string
 	peerNodeIDs []string
 	readyMap    map[string]bool
-
-	mu    sync.RWMutex
-	ready bool // ready is true when all peers are ready
+	readyCount  int64
+	mu          sync.RWMutex
+	ready       bool // ready is true when all peers are ready
 
 	consulKV infra.ConsulKV
 }
@@ -44,6 +46,7 @@ func NewRegistry(
 		nodeID:      nodeID,
 		peerNodeIDs: getPeerIDsExceptSelf(nodeID, peerNodeIDs),
 		readyMap:    make(map[string]bool),
+		readyCount:  1, // self
 	}
 }
 
@@ -65,12 +68,13 @@ func (r *registry) registerReadyPairs(peerIDs []string) {
 	for _, peerID := range peerIDs {
 		ready, exist := r.readyMap[peerID]
 		if !exist {
-			r.readyMap[peerID] = true
+			atomic.AddInt64(&r.readyCount, 1)
 			logger.Info("Register", "peerID", peerID)
 		} else if !ready {
-			r.readyMap[peerID] = true
 			logger.Info("Reconnecting...", "peerID", peerID)
 		}
+
+		r.readyMap[peerID] = true
 	}
 
 	if len(peerIDs) == len(r.peerNodeIDs) && !r.ready {
@@ -128,13 +132,20 @@ func (r *registry) WatchPeersReady() {
 				for _, peerID := range disconnecteds {
 					logger.Warn("Peer disconnected!", "peerID", peerID)
 					r.readyMap[peerID] = false
+					atomic.AddInt64(&r.readyCount, -1)
 				}
 
 			}
 
 		}
 		r.registerReadyPairs(newReadyPeerIDs)
+		logger.Info("Ready count", "count", r.GetReadyPeersCount())
 	}
+
+}
+
+func (r *registry) GetReadyPeersCount() int64 {
+	return atomic.LoadInt64(&r.readyCount)
 }
 
 func (r *registry) getReadyPeers(kvPairs api.KVPairs) []string {

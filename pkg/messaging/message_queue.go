@@ -145,7 +145,10 @@ func (mq *msgQueue) Dequeue(topic string, handler func(message []byte) error) er
 }
 
 func (mq *msgQueue) Close() {
-	mq.consumerContext.Stop()
+	// only close consumer if it was created - dequeue
+	if mq.consumerContext != nil {
+		mq.consumerContext.Stop()
+	}
 }
 
 func (n *msgQueue) handleReconnect(nc *nats.Conn) {
