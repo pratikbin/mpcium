@@ -67,7 +67,7 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		threshold := 2
 		session, err := ec.node.CreateKeyGenSession(walletID, threshold, ec.genKeySucecssQueue)
 		if err != nil {
-			logger.Error("Failed to create key generation session", err)
+			logger.Error("Failed to create key generation session", err, "walletID", walletID)
 			return
 		}
 
