@@ -64,7 +64,7 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(msg []byte) {
 		walletID := string(msg)
 		// TODO: threshold is configurable
-		threshold := 2
+		threshold := 1
 		session, err := ec.node.CreateKeyGenSession(walletID, threshold, ec.genKeySucecssQueue)
 		if err != nil {
 			logger.Error("Failed to create key generation session", err, "walletID", walletID)
@@ -105,7 +105,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		}
 
 		logger.Info("Received signing event", "waleltID", msg.WalletID, "tx", msg.Tx)
-		threshold := 2
+		threshold := 1
 		session, err := ec.node.CreateSigningSession(
 			msg.WalletID,
 			msg.TxID,
