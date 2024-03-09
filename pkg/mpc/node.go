@@ -8,6 +8,7 @@ import (
 
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
@@ -25,10 +26,11 @@ type Node struct {
 	nodeID  string
 	peerIDs []string
 
-	pubSub    messaging.PubSub
-	direct    messaging.DirectMessaging
-	kvstore   kvstore.KVStore
-	preParams *keygen.LocalPreParams
+	pubSub       messaging.PubSub
+	direct       messaging.DirectMessaging
+	kvstore      kvstore.KVStore
+	keyinfoStore keyinfo.Store
+	preParams    *keygen.LocalPreParams
 
 	peerRegistry PeerRegistry
 }
@@ -57,6 +59,7 @@ func NewNode(
 	pubSub messaging.PubSub,
 	direct messaging.DirectMessaging,
 	kvstore kvstore.KVStore,
+	keyinfoStore keyinfo.Store,
 	peerRegistry PeerRegistry,
 ) *Node {
 	preParams, err := keygen.GeneratePreParams(5 * time.Minute)
@@ -74,6 +77,7 @@ func NewNode(
 		pubSub:       pubSub,
 		direct:       direct,
 		kvstore:      kvstore,
+		keyinfoStore: keyinfoStore,
 		preParams:    preParams,
 		peerRegistry: peerRegistry,
 	}
@@ -88,20 +92,23 @@ func composeReadyTopic(nodeID string) string {
 }
 
 func (p *Node) CreateKeyGenSession(walletID string, threshold int, successQueue messaging.MessageQueue) (*KeygenSession, error) {
-	if !p.peerRegistry.ArePeersReady() {
-		return nil, fmt.Errorf("All peers are not ready!")
+	if p.peerRegistry.GetReadyPeersCount() < int64(threshold+1) {
+		return nil, fmt.Errorf("Not enough peers to create gen session! Expected %d, got %d", threshold+1, p.peerRegistry.GetReadyPeersCount())
 	}
 
-	selfPartyID, allPartyIDs := p.generatePartyIDs(PurposeKeygen)
+	readyPeerIDs := p.peerRegistry.GetReadyPeersIncludeSelf()
+	selfPartyID, allPartyIDs := p.generatePartyIDs(PurposeKeygen, readyPeerIDs)
 	session := NewKeygenSession(
 		walletID,
 		p.pubSub,
 		p.direct,
+		readyPeerIDs,
 		selfPartyID,
 		allPartyIDs,
 		threshold,
 		p.preParams,
 		p.kvstore,
+		p.keyinfoStore,
 		successQueue,
 	)
 	return session, nil
@@ -114,32 +121,30 @@ func (p *Node) CreateSigningSession(
 	threshold int,
 	successQueue messaging.MessageQueue,
 ) (*SigningSession, error) {
-	if !p.peerRegistry.ArePeersReady() {
-		return nil, fmt.Errorf("All peers are not ready!")
-	}
-
-	selfPartyID, allPartyIDs := p.generatePartyIDs(PurposeKeygen)
+	readyPeerIDs := p.peerRegistry.GetReadyPeersIncludeSelf()
+	selfPartyID, allPartyIDs := p.generatePartyIDs(PurposeKeygen, readyPeerIDs)
 	session := NewSigningSession(
 		walletID,
 		txID,
 		networkInternalCode,
 		p.pubSub,
 		p.direct,
+		readyPeerIDs,
 		selfPartyID,
 		allPartyIDs,
 		threshold,
 		p.preParams,
 		p.kvstore,
+		p.keyinfoStore,
 		successQueue,
 	)
-
 	return session, nil
 }
 
-func (p *Node) generatePartyIDs(purpose string) (self *tss.PartyID, all []*tss.PartyID) {
+func (p *Node) generatePartyIDs(purpose string, readyPeerIDs []string) (self *tss.PartyID, all []*tss.PartyID) {
 	var selfPartyID *tss.PartyID
-	partyIDs := make([]*tss.PartyID, len(p.peerIDs))
-	for i, peerID := range p.peerIDs {
+	partyIDs := make([]*tss.PartyID, len(readyPeerIDs))
+	for i, peerID := range readyPeerIDs {
 		if peerID == p.nodeID {
 			selfPartyID = CreatePartyID(peerID, purpose)
 			partyIDs[i] = selfPartyID

@@ -119,7 +119,11 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		}
 
 		txBigInt := new(big.Int).SetBytes(msg.Tx)
-		session.Init(txBigInt)
+		err = session.Init(txBigInt)
+		if err != nil {
+			logger.Error("Failed to init signing session, terminate session", err, "walletID", msg.WalletID)
+			return
+		}
 
 		ctx, done := context.WithCancel(context.Background())
 		go func() {

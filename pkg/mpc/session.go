@@ -8,6 +8,7 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/common/errors"
+	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
@@ -19,19 +20,20 @@ type TopicComposer struct {
 }
 
 type Session struct {
-	walletID    string
-	pubSub      messaging.PubSub
-	direct      messaging.DirectMessaging
-	threshold   int
-	selfPartyID *tss.PartyID
+	walletID           string
+	pubSub             messaging.PubSub
+	direct             messaging.DirectMessaging
+	threshold          int
+	participantPeerIDs []string
+	selfPartyID        *tss.PartyID
 	// IDs of all parties in the session including self
-	partyIDs  []*tss.PartyID
-	outCh     chan tss.Message
-	ErrCh     chan error
-	party     tss.Party
-	preParams *keygen.LocalPreParams
-	kvstore   kvstore.KVStore
-
+	partyIDs     []*tss.PartyID
+	outCh        chan tss.Message
+	ErrCh        chan error
+	party        tss.Party
+	preParams    *keygen.LocalPreParams
+	kvstore      kvstore.KVStore
+	keyinfoStore keyinfo.Store
 	broadcastSub messaging.Subscription
 	directSub    messaging.Subscription
 	successQueue messaging.MessageQueue

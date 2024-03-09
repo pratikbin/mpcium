@@ -9,6 +9,7 @@ import (
 
 	"github.com/cryptoniumX/mpcium/pkg/config"
 	"github.com/cryptoniumX/mpcium/pkg/eventconsumer"
+	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
@@ -43,6 +44,7 @@ func main() {
 	badgerKV := NewBadgerKV(*nodeName)
 	defer badgerKV.Close()
 
+	keyinfoStore := keyinfo.NewStore(consulClient.KV())
 	peers := LoadPeersFromConsul(consulClient)
 	nodeID := GetIDFromName(*nodeName, peers)
 
@@ -71,6 +73,7 @@ func main() {
 		pubsub,
 		directMessaging,
 		badgerKV,
+		keyinfoStore,
 		peerRegistry,
 	)
 	defer mpcNode.Close()

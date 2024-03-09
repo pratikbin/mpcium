@@ -23,6 +23,7 @@ type PeerRegistry interface {
 	// Resign is called by the node when it is going to shutdown
 	Resign() error
 	GetReadyPeersCount() int64
+	GetReadyPeersIncludeSelf() []string // get ready peers include self
 }
 
 type registry struct {
@@ -71,6 +72,7 @@ func (r *registry) registerReadyPairs(peerIDs []string) {
 			atomic.AddInt64(&r.readyCount, 1)
 			logger.Info("Register", "peerID", peerID)
 		} else if !ready {
+			atomic.AddInt64(&r.readyCount, 1)
 			logger.Info("Reconnecting...", "peerID", peerID)
 		}
 
@@ -106,6 +108,7 @@ func (r *registry) Ready() error {
 
 func (r *registry) WatchPeersReady() {
 	ticker := time.NewTicker(ReadinessCheckPeriod)
+	go r.logReadyStatus()
 	// first tick is executed immediately
 	for ; true; <-ticker.C {
 		pairs, _, err := r.consulKV.List("ready/", nil)
@@ -113,9 +116,8 @@ func (r *registry) WatchPeersReady() {
 			logger.Error("List ready keys failed", err)
 		}
 
-		newReadyPeerIDs := r.getReadyPeers(pairs)
+		newReadyPeerIDs := r.getReadyPeersFromKVStore(pairs)
 		if len(newReadyPeerIDs) != len(r.peerNodeIDs) {
-			logger.Info("Peers are not ready yet", "ready", len(pairs), "expected", len(r.peerNodeIDs)+1)
 			r.mu.Lock()
 			r.ready = false
 			r.mu.Unlock()
@@ -139,16 +141,36 @@ func (r *registry) WatchPeersReady() {
 
 		}
 		r.registerReadyPairs(newReadyPeerIDs)
-		logger.Info("Ready count", "count", r.GetReadyPeersCount())
 	}
 
+}
+
+func (r *registry) logReadyStatus() {
+	for {
+		time.Sleep(5 * time.Second)
+		if !r.ArePeersReady() {
+			logger.Info("Peers are not ready yet", "ready", r.GetReadyPeersCount(), "expected", len(r.peerNodeIDs)+1)
+		}
+	}
 }
 
 func (r *registry) GetReadyPeersCount() int64 {
 	return atomic.LoadInt64(&r.readyCount)
 }
 
-func (r *registry) getReadyPeers(kvPairs api.KVPairs) []string {
+func (r *registry) GetReadyPeersIncludeSelf() []string {
+	var peerIDs []string
+	for peerID, isReady := range r.readyMap {
+		if isReady {
+			peerIDs = append(peerIDs, peerID)
+		}
+	}
+
+	peerIDs = append(peerIDs, r.nodeID) // append self
+	return peerIDs
+}
+
+func (r *registry) getReadyPeersFromKVStore(kvPairs api.KVPairs) []string {
 	var peers []string
 	for _, k := range kvPairs {
 		var peerNodeID string

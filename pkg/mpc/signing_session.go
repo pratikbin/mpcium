@@ -11,9 +11,11 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/common/errors"
+	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
+	"github.com/samber/lo"
 )
 
 const (
@@ -44,25 +46,29 @@ func NewSigningSession(
 	networkInternalCode string,
 	pubSub messaging.PubSub,
 	direct messaging.DirectMessaging,
+	participantPeerIDs []string,
 	selfID *tss.PartyID,
 	partyIDs []*tss.PartyID,
 	threshold int,
 	preParams *keygen.LocalPreParams,
 	kvstore kvstore.KVStore,
+	keyinfoStore keyinfo.Store,
 	succesQueue messaging.MessageQueue,
 ) *SigningSession {
 	return &SigningSession{
 		Session: Session{
-			walletID:    walletID,
-			pubSub:      pubSub,
-			direct:      direct,
-			threshold:   threshold,
-			selfPartyID: selfID,
-			partyIDs:    partyIDs,
-			outCh:       make(chan tss.Message),
-			ErrCh:       make(chan error),
-			preParams:   preParams,
-			kvstore:     kvstore,
+			walletID:           walletID,
+			pubSub:             pubSub,
+			direct:             direct,
+			threshold:          threshold,
+			participantPeerIDs: participantPeerIDs,
+			selfPartyID:        selfID,
+			partyIDs:           partyIDs,
+			outCh:              make(chan tss.Message),
+			ErrCh:              make(chan error),
+			preParams:          preParams,
+			kvstore:            kvstore,
+			keyinfoStore:       keyinfoStore,
 			topicComposer: &TopicComposer{
 				ComposeBroadcastTopic: func() string {
 					return fmt.Sprintf("sign:broadcast:%s", walletID)
@@ -79,28 +85,48 @@ func NewSigningSession(
 	}
 }
 
-func (s *SigningSession) Init(tx *big.Int) {
+func (s *SigningSession) Init(tx *big.Int) error {
 	logger.Infof("Initializing signing session with partyID: %s, peerIDs %s", s.selfPartyID, s.partyIDs)
 	ctx := tss.NewPeerContext(s.partyIDs)
 	params := tss.NewParameters(tss.S256(), ctx, s.selfPartyID, len(s.partyIDs), s.threshold)
 
-	val, err := s.kvstore.Get(s.walletID)
+	keyData, err := s.kvstore.Get(s.walletID)
 	if err != nil {
-		s.ErrCh <- errors.Wrap(err, "Failed to get wallet data from KVStore")
-		return
+		return errors.Wrap(err, "Failed to get wallet data from KVStore")
 	}
 
-	var data keygen.LocalPartySaveData
-	err = json.Unmarshal(val, &data)
+	keyInfo, err := s.keyinfoStore.Get(s.walletID)
 	if err != nil {
-		s.ErrCh <- errors.Wrap(err, "Failed to unmarshal wallet data")
-		return
+		return errors.Wrap(err, "Failed to get key info data")
+	}
+
+	if len(s.participantPeerIDs) < keyInfo.Threshold+1 {
+		return fmt.Errorf("Not enough participants to sign, expected %d, got %d", keyInfo.Threshold+1, len(s.participantPeerIDs))
+	}
+
+	// check if t+1 participants are present
+	result := lo.Intersect(s.participantPeerIDs, keyInfo.ParticipantPeerIDs)
+	if len(result) < keyInfo.Threshold+1 {
+		return fmt.Errorf(
+			"Incompatible peerIDs to participate in signing. Current participants: %v, expected participants: %v",
+			s.participantPeerIDs,
+			keyInfo.ParticipantPeerIDs,
+		)
+	}
+
+	logger.Info("Have enough participants to sign", "participants", s.participantPeerIDs)
+	// Check if all the participants of the key are present
+	var data keygen.LocalPartySaveData
+	err = json.Unmarshal(keyData, &data)
+	if err != nil {
+		return errors.Wrap(err, "Failed to unmarshal wallet data")
 	}
 
 	s.party = signing.NewLocalParty(tx, params, data, s.outCh, s.endCh)
 	s.data = &data
 	s.tx = tx
 	logger.Info("Initialized sigining session successfully!")
+	return nil
 }
 
 func (s *SigningSession) Sign(done func()) {
