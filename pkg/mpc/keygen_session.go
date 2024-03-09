@@ -8,6 +8,7 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/encoding"
+	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
@@ -31,25 +32,29 @@ func NewKeygenSession(
 	walletID string,
 	pubSub messaging.PubSub,
 	direct messaging.DirectMessaging,
+	participantPeerIDs []string,
 	selfID *tss.PartyID,
 	partyIDs []*tss.PartyID,
 	threshold int,
 	preParams *keygen.LocalPreParams,
 	kvstore kvstore.KVStore,
+	keyinfoStore keyinfo.Store,
 	successQueue messaging.MessageQueue,
 ) *KeygenSession {
 	return &KeygenSession{
 		Session: Session{
-			walletID:    walletID,
-			pubSub:      pubSub,
-			direct:      direct,
-			threshold:   threshold,
-			selfPartyID: selfID,
-			partyIDs:    partyIDs,
-			outCh:       make(chan tss.Message),
-			ErrCh:       make(chan error),
-			preParams:   preParams,
-			kvstore:     kvstore,
+			walletID:           walletID,
+			pubSub:             pubSub,
+			direct:             direct,
+			threshold:          threshold,
+			participantPeerIDs: participantPeerIDs,
+			selfPartyID:        selfID,
+			partyIDs:           partyIDs,
+			outCh:              make(chan tss.Message),
+			ErrCh:              make(chan error),
+			preParams:          preParams,
+			kvstore:            kvstore,
+			keyinfoStore:       keyinfoStore,
 			topicComposer: &TopicComposer{
 				ComposeBroadcastTopic: func() string {
 					return fmt.Sprintf("keygen:broadcast:%s", walletID)
@@ -69,7 +74,7 @@ func (s *KeygenSession) Init() {
 	ctx := tss.NewPeerContext(s.partyIDs)
 	params := tss.NewParameters(tss.S256(), ctx, s.selfPartyID, len(s.partyIDs), s.threshold)
 	s.party = keygen.NewLocalParty(params, s.outCh, s.endCh, *s.preParams)
-	logger.Infof("[INITIALIZED] Initialized session successfully partyID: %s, peerIDs %s, walletID %s", s.selfPartyID, s.partyIDs, s.walletID)
+	logger.Infof("[INITIALIZED] Initialized session successfully partyID: %s, peerIDs %s, walletID %s, threshold = %d", s.selfPartyID, s.partyIDs, s.walletID, s.threshold)
 }
 
 func (s *KeygenSession) GenerateKey(done func()) {
@@ -98,7 +103,20 @@ func (s *KeygenSession) GenerateKey(done func()) {
 				return
 			}
 
+			keyInfo := keyinfo.KeyInfo{
+				ParticipantPeerIDs: s.participantPeerIDs,
+				Threshold:          s.threshold,
+			}
+
+			err = s.keyinfoStore.Save(s.walletID, &keyInfo)
+			if err != nil {
+				logger.Error("Failed to save keyinfo", err, "walletID", s.walletID)
+				s.ErrCh <- err
+				return
+			}
+
 			publicKey := saveData.ECDSAPub
+
 			pubKey := &ecdsa.PublicKey{
 				Curve: publicKey.Curve(),
 				X:     publicKey.X(),
