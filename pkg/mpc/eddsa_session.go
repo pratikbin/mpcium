@@ -5,7 +5,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/common/errors"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
@@ -14,12 +13,7 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 )
 
-type TopicComposer struct {
-	ComposeBroadcastTopic func() string
-	ComposeDirectTopic    func(nodeID string) string
-}
-
-type Session struct {
+type EddsaSession struct {
 	walletID           string
 	pubSub             messaging.PubSub
 	direct             messaging.DirectMessaging
@@ -27,13 +21,10 @@ type Session struct {
 	participantPeerIDs []string
 	selfPartyID        *tss.PartyID
 	// IDs of all parties in the session including self
-	partyIDs []*tss.PartyID
-	outCh    chan tss.Message
-	ErrCh    chan error
-	party    tss.Party
-
-	// preParams is nil for EDDSA session
-	preParams    *keygen.LocalPreParams
+	partyIDs     []*tss.PartyID
+	outCh        chan tss.Message
+	ErrCh        chan error
+	party        tss.Party
 	kvstore      kvstore.KVStore
 	keyinfoStore keyinfo.Store
 	broadcastSub messaging.Subscription
@@ -41,23 +32,22 @@ type Session struct {
 	successQueue messaging.MessageQueue
 
 	topicComposer *TopicComposer
-	getRoundFunc  GetRoundFunc
 	mu            sync.Mutex
 }
 
-func (s *Session) PartyID() *tss.PartyID {
+func (s *EddsaSession) PartyID() *tss.PartyID {
 	return s.selfPartyID
 }
 
-func (s *Session) PartyIDs() []*tss.PartyID {
+func (s *EddsaSession) PartyIDs() []*tss.PartyID {
 	return s.partyIDs
 }
 
-func (s *Session) PartyCount() int {
+func (s *EddsaSession) PartyCount() int {
 	return len(s.partyIDs)
 }
 
-func (s *Session) handleTssMessage(keyshare tss.Message) {
+func (s *EddsaSession) handleTssMessage(keyshare tss.Message) {
 	data, routing, err := keyshare.WireBytes()
 	if err != nil {
 		s.ErrCh <- err
@@ -89,7 +79,7 @@ func (s *Session) handleTssMessage(keyshare tss.Message) {
 	}
 }
 
-func (s *Session) receiveTssMessage(rawMsg []byte) {
+func (s *EddsaSession) receiveTssMessage(rawMsg []byte) {
 	msg, err := UnmarshalTssMessage(rawMsg)
 	if err != nil {
 		s.ErrCh <- fmt.Errorf("Failed to unmarshal message: %w", err)
@@ -101,7 +91,7 @@ func (s *Session) receiveTssMessage(rawMsg []byte) {
 		toIDs[i] = id.String()
 	}
 
-	round, err := s.getRoundFunc(msg.MsgBytes, s.selfPartyID, msg.IsBroadcast)
+	round, err := GetEddsaMsgRound(msg.MsgBytes, s.selfPartyID, msg.IsBroadcast)
 	if err != nil {
 		s.ErrCh <- errors.Wrap(err, "Broken TSS Share")
 		return
@@ -123,7 +113,7 @@ func (s *Session) receiveTssMessage(rawMsg []byte) {
 	}
 }
 
-func (s *Session) ListenToIncomingMessageAsync() {
+func (s *EddsaSession) ListenToIncomingMessage() {
 	go func() {
 		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(msg []byte) {
 			s.receiveTssMessage(msg)
@@ -149,7 +139,7 @@ func (s *Session) ListenToIncomingMessageAsync() {
 
 }
 
-func (s *Session) Close() error {
+func (s *EddsaSession) Close() error {
 	err := s.broadcastSub.Unsubscribe()
 	if err != nil {
 		return err

@@ -26,11 +26,11 @@ type Node struct {
 	nodeID  string
 	peerIDs []string
 
-	pubSub       messaging.PubSub
-	direct       messaging.DirectMessaging
-	kvstore      kvstore.KVStore
-	keyinfoStore keyinfo.Store
-	preParams    *keygen.LocalPreParams
+	pubSub         messaging.PubSub
+	direct         messaging.DirectMessaging
+	kvstore        kvstore.KVStore
+	keyinfoStore   keyinfo.Store
+	ecdsaPreParams *keygen.LocalPreParams
 
 	peerRegistry PeerRegistry
 }
@@ -72,14 +72,14 @@ func NewNode(
 	go peerRegistry.WatchPeersReady()
 
 	return &Node{
-		nodeID:       nodeID,
-		peerIDs:      peerIDs,
-		pubSub:       pubSub,
-		direct:       direct,
-		kvstore:      kvstore,
-		keyinfoStore: keyinfoStore,
-		preParams:    preParams,
-		peerRegistry: peerRegistry,
+		nodeID:         nodeID,
+		peerIDs:        peerIDs,
+		pubSub:         pubSub,
+		direct:         direct,
+		kvstore:        kvstore,
+		keyinfoStore:   keyinfoStore,
+		ecdsaPreParams: preParams,
+		peerRegistry:   peerRegistry,
 	}
 }
 
@@ -106,7 +106,29 @@ func (p *Node) CreateKeyGenSession(walletID string, threshold int, successQueue 
 		selfPartyID,
 		allPartyIDs,
 		threshold,
-		p.preParams,
+		p.ecdsaPreParams,
+		p.kvstore,
+		p.keyinfoStore,
+		successQueue,
+	)
+	return session, nil
+}
+
+func (p *Node) CreateEDDSAKeyGenSession(walletID string, threshold int, successQueue messaging.MessageQueue) (*EDDSAKeygenSession, error) {
+	if p.peerRegistry.GetReadyPeersCount() < int64(threshold+1) {
+		return nil, fmt.Errorf("Not enough peers to create gen session! Expected %d, got %d", threshold+1, p.peerRegistry.GetReadyPeersCount())
+	}
+
+	readyPeerIDs := p.peerRegistry.GetReadyPeersIncludeSelf()
+	selfPartyID, allPartyIDs := p.generatePartyIDs(PurposeKeygen, readyPeerIDs)
+	session := NewEDDSAKeygenSession(
+		walletID,
+		p.pubSub,
+		p.direct,
+		readyPeerIDs,
+		selfPartyID,
+		allPartyIDs,
+		threshold,
 		p.kvstore,
 		p.keyinfoStore,
 		successQueue,
@@ -133,7 +155,7 @@ func (p *Node) CreateSigningSession(
 		selfPartyID,
 		allPartyIDs,
 		threshold,
-		p.preParams,
+		p.ecdsaPreParams,
 		p.kvstore,
 		p.keyinfoStore,
 		successQueue,

@@ -70,9 +70,18 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 			logger.Error("Failed to create key generation session", err, "walletID", walletID)
 			return
 		}
+		eddsaSession, err := ec.node.CreateEDDSAKeyGenSession(walletID, threshold, ec.genKeySucecssQueue)
+		if err != nil {
+			logger.Error("Failed to create key generation session", err, "walletID", walletID)
+			return
+		}
 
 		session.Init()
+		eddsaSession.Init()
+
 		ctx, done := context.WithCancel(context.Background())
+		ctxEddsa, doneEddsa := context.WithCancel(context.Background())
+
 		go func() {
 			for {
 				select {
@@ -84,8 +93,24 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 			}
 		}()
 
-		session.ListenToIncomingMessage()
-		session.GenerateKey(done)
+		go func() {
+			for {
+				select {
+				case <-ctxEddsa.Done():
+					return
+				case err := <-eddsaSession.ErrCh:
+					logger.Error("Keygen session error", err)
+				}
+			}
+		}()
+
+		session.ListenToIncomingMessageAsync()
+		go session.GenerateKey(done)
+		// session.Close()
+
+		eddsaSession.ListenToIncomingMessageAsync()
+		go eddsaSession.GenerateKey(doneEddsa)
+		// eddsaSession.Close()
 	})
 
 	ec.keyGenerationSub = sub
@@ -138,7 +163,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		}()
 
-		session.ListenToIncomingMessage()
+		session.ListenToIncomingMessageAsync()
 		session.Sign(done)
 	})
 

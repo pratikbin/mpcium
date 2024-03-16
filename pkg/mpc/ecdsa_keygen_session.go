@@ -1,13 +1,11 @@
 package mpc
 
 import (
-	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
 
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
-	"github.com/cryptoniumX/mpcium/pkg/encoding"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
@@ -63,6 +61,7 @@ func NewKeygenSession(
 					return fmt.Sprintf("keygen:direct:%s:%s", walletID, nodeID)
 				},
 			},
+			getRoundFunc: GetEcdsaMsgRound,
 			successQueue: successQueue,
 		},
 		endCh: make(chan *keygen.LocalPartySaveData),
@@ -115,47 +114,47 @@ func (s *KeygenSession) GenerateKey(done func()) {
 				return
 			}
 
-			publicKey := saveData.ECDSAPub
+			// publicKey := saveData.ECDSAPub
 
-			pubKey := &ecdsa.PublicKey{
-				Curve: publicKey.Curve(),
-				X:     publicKey.X(),
-				Y:     publicKey.Y(),
-			}
+			// pubKey := &ecdsa.PublicKey{
+			// 	Curve: publicKey.Curve(),
+			// 	X:     publicKey.X(),
+			// 	Y:     publicKey.Y(),
+			// }
 
-			pubKeyBytes, err := encoding.EncodeS256PubKey(pubKey)
-			if err != nil {
-				logger.Error("failed to encode public key", err)
-				s.ErrCh <- fmt.Errorf("failed to encode public key: %w", err)
-				return
-			}
+			// pubKeyBytes, err := encoding.EncodeS256PubKey(pubKey)
+			// if err != nil {
+			// 	logger.Error("failed to encode public key", err)
+			// 	s.ErrCh <- fmt.Errorf("failed to encode public key: %w", err)
+			// 	return
+			// }
 
-			successEvent := KeygenSuccessEvent{
-				WalletID: s.walletID,
-				PubKey:   pubKeyBytes,
-			}
+			// successEvent := KeygenSuccessEvent{
+			// 	WalletID: s.walletID,
+			// 	PubKey:   pubKeyBytes,
+			// }
 
-			successEventBytes, err := json.Marshal(successEvent)
-			if err != nil {
-				s.ErrCh <- fmt.Errorf("failed to marshal success event: %w", err)
-				return
-			}
+			// successEventBytes, err := json.Marshal(successEvent)
+			// if err != nil {
+			// 	s.ErrCh <- fmt.Errorf("failed to marshal success event: %w", err)
+			// 	return
+			// }
 
-			err = s.successQueue.Enqueue(fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID), successEventBytes, &messaging.EnqueueOptions{
-				IdempotententKey: fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID),
-			})
-			if err != nil {
-				logger.Error("Failed to publish key generation success message", err)
-				s.ErrCh <- fmt.Errorf("Failed to publish key generation success message %w", err)
-				return
-			}
+			// err = s.successQueue.Enqueue(fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID), successEventBytes, &messaging.EnqueueOptions{
+			// 	IdempotententKey: fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID),
+			// })
+			// if err != nil {
+			// 	logger.Error("Failed to publish key generation success message", err)
+			// 	s.ErrCh <- fmt.Errorf("Failed to publish key generation success message %w", err)
+			// 	return
+			// }
 
-			logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", s.walletID)
-			err = s.Close()
-			if err != nil {
-				logger.Error("Failed to close session", err)
-			}
-			done()
+			// logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", s.walletID)
+			// err = s.Close()
+			// if err != nil {
+			// 	logger.Error("Failed to close session", err)
+			// }
+			// done()
 			return
 		}
 	}
