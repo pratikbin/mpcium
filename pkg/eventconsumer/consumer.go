@@ -3,6 +3,7 @@ package eventconsumer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/big"
 	"sync"
@@ -83,15 +84,17 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		ctx, done := context.WithCancel(context.Background())
 		ctxEddsa, doneEddsa := context.WithCancel(context.Background())
 
-		event := &mpc.KeygenSuccessEvent{}
+		successEvent := &mpc.KeygenSuccessEvent{
+			WalletID: walletID,
+		}
 
 		var wg sync.WaitGroup
+		wg.Add(2)
 		go func() {
-			wg.Add(1)
 			for {
 				select {
 				case <-ctx.Done():
-					event.S256PubKey = session.GetPubKeyResult()
+					successEvent.S256PubKey = session.GetPubKeyResult()
 					wg.Done()
 					return
 				case err := <-session.ErrCh:
@@ -101,11 +104,10 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		}()
 
 		go func() {
-			wg.Add(1)
 			for {
 				select {
 				case <-ctxEddsa.Done():
-					event.EDDSAPubKey = eddsaSession.GetPubKeyResult()
+					successEvent.EDDSAPubKey = eddsaSession.GetPubKeyResult()
 					wg.Done()
 					return
 				case err := <-eddsaSession.ErrCh:
@@ -121,9 +123,30 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		go eddsaSession.GenerateKey(doneEddsa)
 
 		wg.Wait()
-		session.Close()
-		eddsaSession.Close()
-		logger.Info("Closing secion", "event", event)
+		if err != nil {
+			logger.Error("Errors when closing sessions", err)
+		}
+		logger.Info("Closing section successfully!", "event", successEvent)
+
+		successEventBytes, err := json.Marshal(successEvent)
+		if err != nil {
+			logger.Error("Failed to marshal keygen success event", err)
+			return
+		}
+
+		err = ec.genKeySucecssQueue.Enqueue(fmt.Sprintf(mpc.TypeGenerateWalletSuccess, walletID), successEventBytes, &messaging.EnqueueOptions{
+			IdempotententKey: fmt.Sprintf(mpc.TypeGenerateWalletSuccess, walletID),
+		})
+		if err != nil {
+			logger.Error("Failed to publish key generation success message", err)
+			return
+		}
+
+		logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", walletID)
+		if err != nil {
+			logger.Error("Failed to close session", err)
+		}
+
 	})
 
 	ec.keyGenerationSub = sub

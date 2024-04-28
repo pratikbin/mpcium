@@ -104,7 +104,7 @@ func (s *EDDSAKeygenSession) GenerateKey(done func()) {
 				Threshold:          s.threshold,
 			}
 
-			err = s.keyinfoStore.Save(s.walletID, &keyInfo)
+			err = s.keyinfoStore.Save(s.composeKey(s.walletID), &keyInfo)
 			if err != nil {
 				logger.Error("Failed to save keyinfo", err, "walletID", s.walletID)
 				s.ErrCh <- err
@@ -121,6 +121,11 @@ func (s *EDDSAKeygenSession) GenerateKey(done func()) {
 
 			pubKeyBytes := pk.SerializeCompressed()
 			s.pubkeyBytes = pubKeyBytes
+
+			err = s.Close()
+			if err != nil {
+				logger.Error("Failed to close session", err)
+			}
 			done()
 			return
 
@@ -180,10 +185,6 @@ func (s *EDDSAKeygenSession) GenerateKey(done func()) {
 			// }
 
 			// logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", s.walletID)
-			// err = s.Close()
-			// if err != nil {
-			// 	logger.Error("Failed to close session", err)
-			// }
 			// done()
 			// return
 		}
