@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"math/big"
+	"sync"
 
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
@@ -82,10 +83,16 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		ctx, done := context.WithCancel(context.Background())
 		ctxEddsa, doneEddsa := context.WithCancel(context.Background())
 
+		event := &mpc.KeygenSuccessEvent{}
+
+		var wg sync.WaitGroup
 		go func() {
+			wg.Add(1)
 			for {
 				select {
 				case <-ctx.Done():
+					event.S256PubKey = session.GetPubKeyResult()
+					wg.Done()
 					return
 				case err := <-session.ErrCh:
 					logger.Error("Keygen session error", err)
@@ -94,9 +101,12 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		}()
 
 		go func() {
+			wg.Add(1)
 			for {
 				select {
 				case <-ctxEddsa.Done():
+					event.EDDSAPubKey = eddsaSession.GetPubKeyResult()
+					wg.Done()
 					return
 				case err := <-eddsaSession.ErrCh:
 					logger.Error("Keygen session error", err)
@@ -106,11 +116,14 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 
 		session.ListenToIncomingMessageAsync()
 		go session.GenerateKey(done)
-		// session.Close()
 
 		eddsaSession.ListenToIncomingMessageAsync()
 		go eddsaSession.GenerateKey(doneEddsa)
-		// eddsaSession.Close()
+
+		wg.Wait()
+		session.Close()
+		eddsaSession.Close()
+		logger.Info("Closing secion", "event", event)
 	})
 
 	ec.keyGenerationSub = sub

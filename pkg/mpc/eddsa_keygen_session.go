@@ -10,7 +10,6 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
-	"github.com/decred/base58"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
 )
 
@@ -56,6 +55,9 @@ func NewEDDSAKeygenSession(
 				return fmt.Sprintf("keygen:direct:eddsa:%s:%s", walletID, nodeID)
 			},
 		},
+		composeKey: func(waleltID string) string {
+			return fmt.Sprintf("eddsa:%s", waleltID)
+		},
 		getRoundFunc: GetEddsaMsgRound,
 		successQueue: successQueue,
 	},
@@ -90,7 +92,7 @@ func (s *EDDSAKeygenSession) GenerateKey(done func()) {
 				return
 			}
 
-			err = s.kvstore.Put(s.walletID, keyBytes)
+			err = s.kvstore.Put(s.composeKey(s.walletID), keyBytes)
 			if err != nil {
 				logger.Error("Failed to save key", err, "walletID", s.walletID)
 				s.ErrCh <- err
@@ -118,8 +120,31 @@ func (s *EDDSAKeygenSession) GenerateKey(done func()) {
 			}
 
 			pubKeyBytes := pk.SerializeCompressed()
-			solanaAddress := base58.Encode(pubKeyBytes)
-			logger.Info("solana address", "address", solanaAddress)
+			s.pubkeyBytes = pubKeyBytes
+			done()
+			return
+
+			// solanaAddress := base58.Encode(pubKeyBytes)
+
+			// logger.Info("solana address", "address", solanaAddress)
+
+			// bytes, err := encoding.EncodeEDDSAPubKey(&pk)
+			// if err != nil {
+			// 	s.ErrCh <- err
+			// }
+
+			// k, err := encoding.DecodeEDDSAPubKey(bytes)
+			// if err != nil {
+			// 	s.ErrCh <- err
+			// }
+
+			// x := k.X
+			// y := k.Y
+
+			// logger.Info("comparing", "x", x.Cmp(pk.X))
+			// logger.Info("comparing", "y", y.Cmp(pk.Y))
+
+			// logger.Info("solana address", "address", solanaAddress)
 
 			// pubKey := &ecdsa.PublicKey{
 			// 	Curve: publicKey.Curve(),

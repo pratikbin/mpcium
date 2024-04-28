@@ -1,11 +1,13 @@
 package mpc
 
 import (
+	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
 
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/cryptoniumX/mpcium/pkg/encoding"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
@@ -22,8 +24,9 @@ type KeygenSession struct {
 }
 
 type KeygenSuccessEvent struct {
-	WalletID string `json:"wallet_id"`
-	PubKey   []byte `json:"pub_key"`
+	WalletID    string `json:"wallet_id"`
+	S256PubKey  []byte `json:"s256_pub_key"`
+	EDDSAPubKey []byte `json:"eddsa_pub_key"`
 }
 
 func NewKeygenSession(
@@ -55,11 +58,14 @@ func NewKeygenSession(
 			keyinfoStore:       keyinfoStore,
 			topicComposer: &TopicComposer{
 				ComposeBroadcastTopic: func() string {
-					return fmt.Sprintf("keygen:broadcast:%s", walletID)
+					return fmt.Sprintf("keygen:broadcast:ecdsa:%s", walletID)
 				},
 				ComposeDirectTopic: func(nodeID string) string {
-					return fmt.Sprintf("keygen:direct:%s:%s", walletID, nodeID)
+					return fmt.Sprintf("keygen:direct:ecdsa:%s:%s", walletID, nodeID)
 				},
+			},
+			composeKey: func(waleltID string) string {
+				return fmt.Sprintf("ecdsa:%s", waleltID)
 			},
 			getRoundFunc: GetEcdsaMsgRound,
 			successQueue: successQueue,
@@ -95,7 +101,7 @@ func (s *KeygenSession) GenerateKey(done func()) {
 				return
 			}
 
-			err = s.kvstore.Put(s.walletID, keyBytes)
+			err = s.kvstore.Put(s.composeKey(s.walletID), keyBytes)
 			if err != nil {
 				logger.Error("Failed to save key", err, "walletID", s.walletID)
 				s.ErrCh <- err
@@ -114,21 +120,22 @@ func (s *KeygenSession) GenerateKey(done func()) {
 				return
 			}
 
-			// publicKey := saveData.ECDSAPub
+			publicKey := saveData.ECDSAPub
 
-			// pubKey := &ecdsa.PublicKey{
-			// 	Curve: publicKey.Curve(),
-			// 	X:     publicKey.X(),
-			// 	Y:     publicKey.Y(),
-			// }
+			pubKey := &ecdsa.PublicKey{
+				Curve: publicKey.Curve(),
+				X:     publicKey.X(),
+				Y:     publicKey.Y(),
+			}
 
-			// pubKeyBytes, err := encoding.EncodeS256PubKey(pubKey)
-			// if err != nil {
-			// 	logger.Error("failed to encode public key", err)
-			// 	s.ErrCh <- fmt.Errorf("failed to encode public key: %w", err)
-			// 	return
-			// }
-
+			pubKeyBytes, err := encoding.EncodeS256PubKey(pubKey)
+			if err != nil {
+				logger.Error("failed to encode public key", err)
+				s.ErrCh <- fmt.Errorf("failed to encode public key: %w", err)
+				return
+			}
+			s.pubkeyBytes = pubKeyBytes
+			done()
 			// successEvent := KeygenSuccessEvent{
 			// 	WalletID: s.walletID,
 			// 	PubKey:   pubKeyBytes,

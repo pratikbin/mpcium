@@ -19,6 +19,8 @@ type TopicComposer struct {
 	ComposeDirectTopic    func(nodeID string) string
 }
 
+type KeyComposerFn func(id string) string
+
 type Session struct {
 	walletID           string
 	pubSub             messaging.PubSub
@@ -41,8 +43,11 @@ type Session struct {
 	successQueue messaging.MessageQueue
 
 	topicComposer *TopicComposer
+	composeKey    KeyComposerFn
 	getRoundFunc  GetRoundFunc
 	mu            sync.Mutex
+	// After the session is done, the key will be stored pubkeyBytes
+	pubkeyBytes []byte
 }
 
 func (s *Session) PartyID() *tss.PartyID {
@@ -159,4 +164,8 @@ func (s *Session) Close() error {
 		return err
 	}
 	return nil
+}
+
+func (s *Session) GetPubKeyResult() []byte {
+	return s.pubkeyBytes
 }
