@@ -14,7 +14,7 @@ var (
 
 // BadgerKVStore is an implementation of the KVStore interface using BadgerDB.
 type BadgerKVStore struct {
-	db *badger.DB
+	DB *badger.DB
 }
 
 // NewBadgerKVStore creates a new BadgerKVStore instance.
@@ -32,12 +32,12 @@ func NewBadgerKVStore(dbPath string, encryptionKey []byte) (*BadgerKVStore, erro
 
 	logger.Info("Connected to BadgerDB successfully!", "path", dbPath)
 
-	return &BadgerKVStore{db: db}, nil
+	return &BadgerKVStore{DB: db}, nil
 }
 
 // Put stores a key-value pair in the BadgerDB.
 func (b *BadgerKVStore) Put(key string, value []byte) error {
-	return b.db.Update(func(txn *badger.Txn) error {
+	return b.DB.Update(func(txn *badger.Txn) error {
 		return txn.Set([]byte(key), value)
 	})
 }
@@ -45,7 +45,7 @@ func (b *BadgerKVStore) Put(key string, value []byte) error {
 // Get retrieves the value associated with a key from BadgerDB.
 func (b *BadgerKVStore) Get(key string) ([]byte, error) {
 	var result []byte
-	err := b.db.View(func(txn *badger.Txn) error {
+	err := b.DB.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(key))
 		if err == nil {
 			return item.Value(func(val []byte) error {
@@ -59,14 +59,32 @@ func (b *BadgerKVStore) Get(key string) ([]byte, error) {
 	return result, err
 }
 
+func (b *BadgerKVStore) Keys() ([]string, error) {
+	var keys []string
+	err := b.DB.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			keys = append(keys, string(item.Key()))
+		}
+		return nil
+	})
+
+	return keys, err
+}
+
 // Delete removes a key-value pair from BadgerDB.
 func (b *BadgerKVStore) Delete(key string) error {
-	return b.db.Update(func(txn *badger.Txn) error {
+	return b.DB.Update(func(txn *badger.Txn) error {
 		return txn.Delete([]byte(key))
 	})
 }
 
 // Close closes the BadgerDB.
 func (b *BadgerKVStore) Close() error {
-	return b.db.Close()
+	return b.DB.Close()
 }
