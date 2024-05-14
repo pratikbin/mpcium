@@ -11,6 +11,7 @@ import (
 )
 
 func main() {
+	logger.Init("production")
 	nodeName := flag.String("name", "", "Provide node name")
 	flag.Parse()
 	if *nodeName == "" {
