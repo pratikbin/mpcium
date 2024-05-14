@@ -3,8 +3,10 @@ package eventconsumer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/big"
+	"sync"
 
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
@@ -70,13 +72,30 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 			logger.Error("Failed to create key generation session", err, "walletID", walletID)
 			return
 		}
+		eddsaSession, err := ec.node.CreateEDDSAKeyGenSession(walletID, threshold, ec.genKeySucecssQueue)
+		if err != nil {
+			logger.Error("Failed to create key generation session", err, "walletID", walletID)
+			return
+		}
 
 		session.Init()
+		eddsaSession.Init()
+
 		ctx, done := context.WithCancel(context.Background())
+		ctxEddsa, doneEddsa := context.WithCancel(context.Background())
+
+		successEvent := &mpc.KeygenSuccessEvent{
+			WalletID: walletID,
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
 		go func() {
 			for {
 				select {
 				case <-ctx.Done():
+					successEvent.S256PubKey = session.GetPubKeyResult()
+					wg.Done()
 					return
 				case err := <-session.ErrCh:
 					logger.Error("Keygen session error", err)
@@ -84,8 +103,50 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 			}
 		}()
 
-		session.ListenToIncomingMessage()
-		session.GenerateKey(done)
+		go func() {
+			for {
+				select {
+				case <-ctxEddsa.Done():
+					successEvent.EDDSAPubKey = eddsaSession.GetPubKeyResult()
+					wg.Done()
+					return
+				case err := <-eddsaSession.ErrCh:
+					logger.Error("Keygen session error", err)
+				}
+			}
+		}()
+
+		session.ListenToIncomingMessageAsync()
+		go session.GenerateKey(done)
+
+		eddsaSession.ListenToIncomingMessageAsync()
+		go eddsaSession.GenerateKey(doneEddsa)
+
+		wg.Wait()
+		if err != nil {
+			logger.Error("Errors when closing sessions", err)
+		}
+		logger.Info("Closing section successfully!", "event", successEvent)
+
+		successEventBytes, err := json.Marshal(successEvent)
+		if err != nil {
+			logger.Error("Failed to marshal keygen success event", err)
+			return
+		}
+
+		err = ec.genKeySucecssQueue.Enqueue(fmt.Sprintf(mpc.TypeGenerateWalletSuccess, walletID), successEventBytes, &messaging.EnqueueOptions{
+			IdempotententKey: fmt.Sprintf(mpc.TypeGenerateWalletSuccess, walletID),
+		})
+		if err != nil {
+			logger.Error("Failed to publish key generation success message", err)
+			return
+		}
+
+		logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", walletID)
+		if err != nil {
+			logger.Error("Failed to close session", err)
+		}
+
 	})
 
 	ec.keyGenerationSub = sub
@@ -138,7 +199,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		}()
 
-		session.ListenToIncomingMessage()
+		session.ListenToIncomingMessageAsync()
 		session.Sign(done)
 	})
 

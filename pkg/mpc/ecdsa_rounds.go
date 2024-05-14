@@ -7,12 +7,6 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/common/errors"
 )
 
-type RoundInfo struct {
-	Index         int
-	RoundMsg      string
-	MsgIdentifier string
-}
-
 const (
 	KEYGEN1          = "KGRound1Message"
 	KEYGEN2aUnicast  = "KGRound2Message1"
@@ -32,7 +26,7 @@ const (
 	TSSKEYSIGNROUNDS = 10
 )
 
-func GetMsgRound(msg []byte, partyID *tss.PartyID, isBroadcast bool) (RoundInfo, error) {
+func GetEcdsaMsgRound(msg []byte, partyID *tss.PartyID, isBroadcast bool) (RoundInfo, error) {
 	parsedMsg, err := tss.ParseWireMessage(msg, partyID, isBroadcast)
 	if err != nil {
 		return RoundInfo{}, err

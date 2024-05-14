@@ -19,6 +19,8 @@ type TopicComposer struct {
 	ComposeDirectTopic    func(nodeID string) string
 }
 
+type KeyComposerFn func(id string) string
+
 type Session struct {
 	walletID           string
 	pubSub             messaging.PubSub
@@ -27,10 +29,12 @@ type Session struct {
 	participantPeerIDs []string
 	selfPartyID        *tss.PartyID
 	// IDs of all parties in the session including self
-	partyIDs     []*tss.PartyID
-	outCh        chan tss.Message
-	ErrCh        chan error
-	party        tss.Party
+	partyIDs []*tss.PartyID
+	outCh    chan tss.Message
+	ErrCh    chan error
+	party    tss.Party
+
+	// preParams is nil for EDDSA session
 	preParams    *keygen.LocalPreParams
 	kvstore      kvstore.KVStore
 	keyinfoStore keyinfo.Store
@@ -39,7 +43,11 @@ type Session struct {
 	successQueue messaging.MessageQueue
 
 	topicComposer *TopicComposer
+	composeKey    KeyComposerFn
+	getRoundFunc  GetRoundFunc
 	mu            sync.Mutex
+	// After the session is done, the key will be stored pubkeyBytes
+	pubkeyBytes []byte
 }
 
 func (s *Session) PartyID() *tss.PartyID {
@@ -98,7 +106,7 @@ func (s *Session) receiveTssMessage(rawMsg []byte) {
 		toIDs[i] = id.String()
 	}
 
-	round, err := GetMsgRound(msg.MsgBytes, s.selfPartyID, msg.IsBroadcast)
+	round, err := s.getRoundFunc(msg.MsgBytes, s.selfPartyID, msg.IsBroadcast)
 	if err != nil {
 		s.ErrCh <- errors.Wrap(err, "Broken TSS Share")
 		return
@@ -120,7 +128,7 @@ func (s *Session) receiveTssMessage(rawMsg []byte) {
 	}
 }
 
-func (s *Session) ListenToIncomingMessage() {
+func (s *Session) ListenToIncomingMessageAsync() {
 	go func() {
 		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(msg []byte) {
 			s.receiveTssMessage(msg)
@@ -156,4 +164,8 @@ func (s *Session) Close() error {
 		return err
 	}
 	return nil
+}
+
+func (s *Session) GetPubKeyResult() []byte {
+	return s.pubkeyBytes
 }
