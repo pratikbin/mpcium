@@ -22,6 +22,7 @@ const (
 	SignSuccessTopic = "mpc.mpc_sign_success.completed"
 )
 
+// Ecdsa signing session
 type SigningSession struct {
 	Session
 	endCh               chan *common.SignatureData
@@ -71,11 +72,14 @@ func NewSigningSession(
 			keyinfoStore:       keyinfoStore,
 			topicComposer: &TopicComposer{
 				ComposeBroadcastTopic: func() string {
-					return fmt.Sprintf("sign:broadcast:%s", walletID)
+					return fmt.Sprintf("sign:ecdsa:broadcast:%s", walletID)
 				},
 				ComposeDirectTopic: func(nodeID string) string {
-					return fmt.Sprintf("sign:direct:%s:%s", walletID, nodeID)
+					return fmt.Sprintf("sign:ecdsa:direct:%s:%s", walletID, nodeID)
 				},
+			},
+			composeKey: func(waleltID string) string {
+				return fmt.Sprintf("ecdsa:%s", waleltID)
 			},
 			successQueue: succesQueue,
 		},
@@ -176,6 +180,7 @@ func (s *SigningSession) Sign(done func()) {
 			})
 			if err != nil {
 				s.ErrCh <- errors.Wrap(err, "Failed to publish sign success message")
+
 				return
 			}
 
