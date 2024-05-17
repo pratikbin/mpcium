@@ -32,6 +32,18 @@ type SigningSession struct {
 	networkInternalCode string
 }
 
+type ISession interface {
+	ErrChan() <-chan error
+	ListenToIncomingMessageAsync()
+}
+
+type ISigningSession interface {
+	ISession
+
+	Init(tx *big.Int) error
+	Sign(done func())
+}
+
 type SigningSuccessEvent struct {
 	NetworkInternalCode string `json:"network_internal_code"`
 	WalletID            string `json:"wallet_id"`

@@ -163,6 +163,32 @@ func (p *Node) CreateSigningSession(
 	return session, nil
 }
 
+func (p *Node) CreateEDDSASigningSession(
+	walletID string,
+	txID string,
+	networkInternalCode string,
+	threshold int,
+	successQueue messaging.MessageQueue,
+) (*EDDSASigningSession, error) {
+	readyPeerIDs := p.peerRegistry.GetReadyPeersIncludeSelf()
+	selfPartyID, allPartyIDs := p.generatePartyIDs(PurposeKeygen, readyPeerIDs)
+	session := NewEDDSASigningSession(
+		walletID,
+		txID,
+		networkInternalCode,
+		p.pubSub,
+		p.direct,
+		readyPeerIDs,
+		selfPartyID,
+		allPartyIDs,
+		threshold,
+		p.kvstore,
+		p.keyinfoStore,
+		successQueue,
+	)
+	return session, nil
+}
+
 func (p *Node) generatePartyIDs(purpose string, readyPeerIDs []string) (self *tss.PartyID, all []*tss.PartyID) {
 	var selfPartyID *tss.PartyID
 	partyIDs := make([]*tss.PartyID, len(readyPeerIDs))

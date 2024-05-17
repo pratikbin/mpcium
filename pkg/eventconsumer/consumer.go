@@ -167,13 +167,28 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		logger.Info("Received signing event", "waleltID", msg.WalletID, "tx", msg.Tx)
 		threshold := 1
-		session, err := ec.node.CreateSigningSession(
-			msg.WalletID,
-			msg.TxID,
-			msg.NetworkInternalCode,
-			threshold,
-			ec.signingSuccessQueue,
-		)
+
+		var session mpc.ISigningSession
+		switch msg.KeyType {
+		case KeyTypeSecp256k1:
+			session, err = ec.node.CreateSigningSession(
+				msg.WalletID,
+				msg.TxID,
+				msg.NetworkInternalCode,
+				threshold,
+				ec.signingSuccessQueue,
+			)
+		case KeyTypeEd25519:
+			session, err = ec.node.CreateEDDSASigningSession(
+				msg.WalletID,
+				msg.TxID,
+				msg.NetworkInternalCode,
+				threshold,
+				ec.signingSuccessQueue,
+			)
+
+		}
+
 		if err != nil {
 			logger.Error("Failed to create signing session", err)
 			return
@@ -192,7 +207,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				select {
 				case <-ctx.Done():
 					return
-				case err := <-session.ErrCh:
+				case err := <-session.ErrChan():
 					logger.Error("Signing session error", err)
 				}
 			}
