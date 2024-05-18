@@ -51,6 +51,9 @@ type SigningSuccessEvent struct {
 	R                   []byte `json:"r"`
 	S                   []byte `json:"s"`
 	SignatureRecovery   []byte `json:"signature_recovery"`
+
+	// TODO: define two separate events for eddsa and ecdsa
+	Signature []byte `json:"signature"`
 }
 
 func NewSigningSession(
@@ -93,6 +96,7 @@ func NewSigningSession(
 			composeKey: func(waleltID string) string {
 				return fmt.Sprintf("ecdsa:%s", waleltID)
 			},
+			getRoundFunc: GetEcdsaMsgRound,
 			successQueue: succesQueue,
 		},
 		endCh:               make(chan *common.SignatureData),
@@ -106,12 +110,12 @@ func (s *SigningSession) Init(tx *big.Int) error {
 	ctx := tss.NewPeerContext(s.partyIDs)
 	params := tss.NewParameters(tss.S256(), ctx, s.selfPartyID, len(s.partyIDs), s.threshold)
 
-	keyData, err := s.kvstore.Get(s.walletID)
+	keyData, err := s.kvstore.Get(s.composeKey(s.walletID))
 	if err != nil {
 		return errors.Wrap(err, "Failed to get wallet data from KVStore")
 	}
 
-	keyInfo, err := s.keyinfoStore.Get(s.walletID)
+	keyInfo, err := s.keyinfoStore.Get(s.composeKey(s.walletID))
 	if err != nil {
 		return errors.Wrap(err, "Failed to get key info data")
 	}

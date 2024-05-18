@@ -66,6 +66,7 @@ func NewEDDSASigningSession(
 			composeKey: func(waleltID string) string {
 				return fmt.Sprintf("eddsa:%s", waleltID)
 			},
+			getRoundFunc: GetEddsaMsgRound,
 			successQueue: succesQueue,
 		},
 		endCh:               make(chan *common.SignatureData),
@@ -149,9 +150,7 @@ func (s *EDDSASigningSession) Sign(done func()) {
 				NetworkInternalCode: s.networkInternalCode,
 				WalletID:            s.walletID,
 				TxID:                s.txID,
-				R:                   sig.R,
-				S:                   sig.S,
-				SignatureRecovery:   sig.SignatureRecovery,
+				Signature:           sig.Signature,
 			}
 
 			bytes, err := json.Marshal(r)
