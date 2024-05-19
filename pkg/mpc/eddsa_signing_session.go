@@ -1,28 +1,24 @@
 package mpc
 
 import (
-	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
 	"math/big"
 
 	"github.com/bnb-chain/tss-lib/v2/common"
-	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
-	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
+	"github.com/bnb-chain/tss-lib/v2/eddsa/keygen"
+	"github.com/bnb-chain/tss-lib/v2/eddsa/signing"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/common/errors"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
+	"github.com/decred/dcrd/dcrec/edwards/v2"
 	"github.com/samber/lo"
 )
 
-const (
-	SignSuccessTopic = "mpc.mpc_sign_success.completed"
-)
-
-type SigningSession struct {
+type EDDSASigningSession struct {
 	Session
 	endCh               chan *common.SignatureData
 	data                *keygen.LocalPartySaveData
@@ -31,16 +27,7 @@ type SigningSession struct {
 	networkInternalCode string
 }
 
-type SigningSuccessEvent struct {
-	NetworkInternalCode string `json:"network_internal_code"`
-	WalletID            string `json:"wallet_id"`
-	TxID                string `json:"tx_id"`
-	R                   []byte `json:"r"`
-	S                   []byte `json:"s"`
-	SignatureRecovery   []byte `json:"signature_recovery"`
-}
-
-func NewSigningSession(
+func NewEDDSASigningSession(
 	walletID string,
 	txID string,
 	networkInternalCode string,
@@ -50,12 +37,11 @@ func NewSigningSession(
 	selfID *tss.PartyID,
 	partyIDs []*tss.PartyID,
 	threshold int,
-	preParams *keygen.LocalPreParams,
 	kvstore kvstore.KVStore,
 	keyinfoStore keyinfo.Store,
 	succesQueue messaging.MessageQueue,
-) *SigningSession {
-	return &SigningSession{
+) *EDDSASigningSession {
+	return &EDDSASigningSession{
 		Session: Session{
 			walletID:           walletID,
 			pubSub:             pubSub,
@@ -66,17 +52,21 @@ func NewSigningSession(
 			partyIDs:           partyIDs,
 			outCh:              make(chan tss.Message),
 			ErrCh:              make(chan error),
-			preParams:          preParams,
-			kvstore:            kvstore,
-			keyinfoStore:       keyinfoStore,
+			// preParams:          preParams,
+			kvstore:      kvstore,
+			keyinfoStore: keyinfoStore,
 			topicComposer: &TopicComposer{
 				ComposeBroadcastTopic: func() string {
-					return fmt.Sprintf("sign:broadcast:%s", walletID)
+					return fmt.Sprintf("sign:eddsa:broadcast:%s", walletID)
 				},
 				ComposeDirectTopic: func(nodeID string) string {
-					return fmt.Sprintf("sign:direct:%s:%s", walletID, nodeID)
+					return fmt.Sprintf("sign:eddsa:direct:%s:%s", walletID, nodeID)
 				},
 			},
+			composeKey: func(waleltID string) string {
+				return fmt.Sprintf("eddsa:%s", waleltID)
+			},
+			getRoundFunc: GetEddsaMsgRound,
 			successQueue: succesQueue,
 		},
 		endCh:               make(chan *common.SignatureData),
@@ -85,17 +75,17 @@ func NewSigningSession(
 	}
 }
 
-func (s *SigningSession) Init(tx *big.Int) error {
+func (s *EDDSASigningSession) Init(tx *big.Int) error {
 	logger.Infof("Initializing signing session with partyID: %s, peerIDs %s", s.selfPartyID, s.partyIDs)
 	ctx := tss.NewPeerContext(s.partyIDs)
-	params := tss.NewParameters(tss.S256(), ctx, s.selfPartyID, len(s.partyIDs), s.threshold)
+	params := tss.NewParameters(tss.Edwards(), ctx, s.selfPartyID, len(s.partyIDs), s.threshold)
 
-	keyData, err := s.kvstore.Get(s.walletID)
+	keyData, err := s.kvstore.Get(s.composeKey(s.walletID))
 	if err != nil {
 		return errors.Wrap(err, "Failed to get wallet data from KVStore")
 	}
 
-	keyInfo, err := s.keyinfoStore.Get(s.walletID)
+	keyInfo, err := s.keyinfoStore.Get(s.composeKey(s.walletID))
 	if err != nil {
 		return errors.Wrap(err, "Failed to get key info data")
 	}
@@ -129,7 +119,7 @@ func (s *SigningSession) Init(tx *big.Int) error {
 	return nil
 }
 
-func (s *SigningSession) Sign(done func()) {
+func (s *EDDSASigningSession) Sign(done func()) {
 	logger.Info("Starting signing", "walletID", s.walletID)
 	go func() {
 		if err := s.party.Start(); err != nil {
@@ -143,14 +133,14 @@ func (s *SigningSession) Sign(done func()) {
 		case msg := <-s.outCh:
 			s.handleTssMessage(msg)
 		case sig := <-s.endCh:
-			publicKey := *s.data.ECDSAPub
-			pk := ecdsa.PublicKey{
-				Curve: publicKey.Curve(),
+			publicKey := *s.data.EDDSAPub
+			pk := edwards.PublicKey{
+				Curve: tss.Edwards(),
 				X:     publicKey.X(),
 				Y:     publicKey.Y(),
 			}
 
-			ok := ecdsa.Verify(&pk, s.tx.Bytes(), new(big.Int).SetBytes(sig.R), new(big.Int).SetBytes(sig.S))
+			ok := edwards.Verify(&pk, s.tx.Bytes(), new(big.Int).SetBytes(sig.R), new(big.Int).SetBytes(sig.S))
 			if !ok {
 				s.ErrCh <- errors.New("Failed to verify signature")
 				return
@@ -160,9 +150,7 @@ func (s *SigningSession) Sign(done func()) {
 				NetworkInternalCode: s.networkInternalCode,
 				WalletID:            s.walletID,
 				TxID:                s.txID,
-				R:                   sig.R,
-				S:                   sig.S,
-				SignatureRecovery:   sig.SignatureRecovery,
+				Signature:           sig.Signature,
 			}
 
 			bytes, err := json.Marshal(r)

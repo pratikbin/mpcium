@@ -169,3 +169,7 @@ func (s *Session) Close() error {
 func (s *Session) GetPubKeyResult() []byte {
 	return s.pubkeyBytes
 }
+
+func (s *Session) ErrChan() <-chan error {
+	return s.ErrCh
+}
