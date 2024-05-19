@@ -215,6 +215,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		}()
 
 		session.ListenToIncomingMessageAsync()
+		// TODO: use consul distributed lock here
 		time.Sleep(1 * time.Second)
 		go session.Sign(done) // use go routine to not block the event susbscriber
 	})
