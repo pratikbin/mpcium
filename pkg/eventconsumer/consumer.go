@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/big"
 	"sync"
+	"time"
 
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
@@ -165,7 +166,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			return
 		}
 
-		logger.Info("Received signing event", "waleltID", msg.WalletID, "tx", msg.Tx)
+		logger.Info("Received signing event", "waleltID", msg.WalletID, "type", msg.KeyType, "tx", msg.Tx)
 		threshold := 1
 
 		var session mpc.ISigningSession
@@ -211,11 +212,11 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 					logger.Error("Signing session error", err)
 				}
 			}
-
 		}()
 
 		session.ListenToIncomingMessageAsync()
-		session.Sign(done)
+		time.Sleep(1 * time.Second)
+		go session.Sign(done) // use go routine to not block the event susbscriber
 	})
 
 	ec.signingSub = sub
