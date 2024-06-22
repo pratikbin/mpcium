@@ -118,9 +118,11 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		}()
 
 		session.ListenToIncomingMessageAsync()
-		go session.GenerateKey(done)
-
 		eddsaSession.ListenToIncomingMessageAsync()
+		// TODO: replace sleep with distributed lock
+		time.Sleep(1 * time.Second)
+
+		go session.GenerateKey(done)
 		go eddsaSession.GenerateKey(doneEddsa)
 
 		wg.Wait()
