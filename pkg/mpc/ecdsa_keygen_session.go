@@ -69,6 +69,7 @@ func NewKeygenSession(
 			},
 			getRoundFunc: GetEcdsaMsgRound,
 			successQueue: successQueue,
+			sessionType:  SessionTypeEcdsa,
 		},
 		endCh: make(chan *keygen.LocalPartySaveData),
 	}

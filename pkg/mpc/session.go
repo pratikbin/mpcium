@@ -21,6 +21,13 @@ type TopicComposer struct {
 
 type KeyComposerFn func(id string) string
 
+type SessionType string
+
+const (
+	SessionTypeEcdsa SessionType = "session_ecdsa"
+	SessionTypeEddsa SessionType = "session_eddsa"
+)
+
 type Session struct {
 	walletID           string
 	pubSub             messaging.PubSub
@@ -48,6 +55,7 @@ type Session struct {
 	mu            sync.Mutex
 	// After the session is done, the key will be stored pubkeyBytes
 	pubkeyBytes []byte
+	sessionType SessionType
 }
 
 func (s *Session) PartyID() *tss.PartyID {
@@ -112,7 +120,7 @@ func (s *Session) receiveTssMessage(rawMsg []byte) {
 		return
 	}
 
-	logger.Info("Received message", "from", msg.From.String(), "to", strings.Join(toIDs, ","), "isBroadcast", msg.IsBroadcast, "round", round.RoundMsg)
+	logger.Info(fmt.Sprintf("%s Received message", s.sessionType), "from", msg.From.String(), "to", strings.Join(toIDs, ","), "isBroadcast", msg.IsBroadcast, "round", round.RoundMsg)
 	isBroadcast := msg.IsBroadcast && len(msg.To) == 0
 	isToSelf := len(msg.To) == 1 && ComparePartyIDs(msg.To[0], s.selfPartyID)
 

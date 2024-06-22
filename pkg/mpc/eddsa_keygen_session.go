@@ -60,6 +60,7 @@ func NewEDDSAKeygenSession(
 		},
 		getRoundFunc: GetEddsaMsgRound,
 		successQueue: successQueue,
+		sessionType:  SessionTypeEddsa,
 	},
 		endCh: make(chan *keygen.LocalPartySaveData),
 	}
