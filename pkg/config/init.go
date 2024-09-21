@@ -2,7 +2,9 @@ package config
 
 import (
 	"log"
+	"strings"
 
+	"github.com/cryptoniumX/mpcium/pkg/constant"
 	"github.com/spf13/viper"
 )
 
@@ -12,18 +14,30 @@ type AppConfig struct {
 }
 
 type ConsulConfig struct {
-	Address string `mapstructure:"address"`
+	Address  string `mapstructure:"address"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	Token    string `mapstructure:"token"`
 }
 
 type NATsConfig struct {
-	URL string `mapstructure:"url"`
+	URL      string `mapstructure:"url"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
 }
 
-func InitViperConfig() {
-	viper.SetConfigName("config") // name of config file (without extension)
-	viper.SetConfigType("yaml")   // REQUIRED if the config file does not have the extension in the name
-	viper.AddConfigPath(".")      // optionally look for config in the working directory
-	err := viper.ReadInConfig()   // Find and read the config file
+func InitViperConfig(environment string) {
+	if environment == constant.EnvProduction {
+		viper.SetConfigName("config.prod")
+	} else {
+		viper.SetConfigName("config") // name of config file (without extension)
+	}
+	viper.SetConfigType("yaml") // REQUIRED if the config file does not have the extension in the name
+	viper.AddConfigPath(".")    // optionally look for config in the working directory
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.AutomaticEnv()
+
+	err := viper.ReadInConfig() // Find and read the config file
 
 	if err != nil { // Handle errors reading the config file
 		log.Fatal("Read config failed", err)

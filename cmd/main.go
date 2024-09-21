@@ -8,7 +8,9 @@ import (
 	"syscall"
 
 	"github.com/cryptoniumX/mpcium/pkg/config"
+	"github.com/cryptoniumX/mpcium/pkg/constant"
 	"github.com/cryptoniumX/mpcium/pkg/eventconsumer"
+	"github.com/cryptoniumX/mpcium/pkg/infra"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
@@ -16,20 +18,17 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/mpc"
 	"github.com/hashicorp/consul/api"
 	"github.com/nats-io/nats.go"
+	"github.com/spf13/viper"
 )
 
 const (
 	ENVIRONMENT = "ENVIRONMENT"
 )
 
-type AppConfig struct {
-	ConsulAddr string `yaml:"consul.address"`
-	NatsURL    string `yaml:"nats.url"`
-}
-
 func main() {
-	config.InitViperConfig()
-	logger.Init(os.Getenv(ENVIRONMENT))
+	environment := os.Getenv(ENVIRONMENT)
+	config.InitViperConfig(environment)
+	logger.Init(environment)
 
 	nodeName := flag.String("name", "", "Provide node name")
 	flag.Parse()
@@ -40,7 +39,7 @@ func main() {
 	appConfig := config.LoadConfig()
 	logger.Info("App config", "config", appConfig)
 
-	consulClient := NewConsulClient(appConfig.Consul.Address)
+	consulClient := infra.GetConsulClient(environment, appConfig)
 	badgerKV := NewBadgerKV(*nodeName)
 	defer badgerKV.Close()
 
@@ -48,8 +47,12 @@ func main() {
 	peers := LoadPeersFromConsul(consulClient)
 	nodeID := GetIDFromName(*nodeName, peers)
 
-	natsConn := NewNATsConnection(appConfig.NATs.URL)
+	natsConn, err := GetNATSConnection(environment, appConfig)
+	if err != nil {
+		logger.Fatal("Failed to connect to NATS", err)
+	}
 	defer natsConn.Close()
+
 	pubsub := messaging.NewNATSPubSub(natsConn)
 	directMessaging := messaging.NewNatsDirectMessaging(natsConn)
 	mqManager := messaging.NewNATsMessageQueueManager("mpc", []string{
@@ -143,7 +146,7 @@ func NewBadgerKV(nodeName string) *kvstore.BadgerKVStore {
 	dbPath := fmt.Sprintf("./db/%s", nodeName)
 	badgerKv, err := kvstore.NewBadgerKVStore(
 		dbPath,
-		[]byte("1JwFmsc9lxlLfkPl"),
+		[]byte(viper.GetString("badger_password")),
 	)
 	if err != nil {
 		logger.Fatal("Failed to create badger kv store", err)
@@ -152,10 +155,18 @@ func NewBadgerKV(nodeName string) *kvstore.BadgerKVStore {
 	return badgerKv
 }
 
-func NewNATsConnection(natsURL string) *nats.Conn {
-	natsConn, err := nats.Connect(natsURL, nats.Name("MPC NATs client"), nats.NoEcho())
-	if err != nil {
-		logger.Fatal("Failed to connect to nats", err)
+func GetNATSConnection(environment string, cfg *config.AppConfig) (*nats.Conn, error) {
+	if environment != constant.EnvProduction {
+		return nats.Connect(nats.DefaultURL)
 	}
-	return natsConn
+
+	clientCert := "./certs/client-cert.pem"
+	clientKey := "./certs/client-key.pem"
+	caCert := "./certs/rootCA.pem"
+
+	return nats.Connect(cfg.NATs.URL,
+		nats.ClientCert(clientCert, clientKey),
+		nats.RootCAs(caCert),
+		nats.UserInfo(cfg.NATs.Username, cfg.NATs.Password),
+	)
 }

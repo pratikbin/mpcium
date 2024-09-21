@@ -1,0 +1,12 @@
+nats:
+  url: tls://103.2.230.61:4223
+  username: apex
+  password: ""
+
+consul:
+  address: https://apex-consul.void.exchange
+  username: apex
+  token: ""
+  password: ""
+
+badger_password:

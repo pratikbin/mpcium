@@ -2,3 +2,5 @@ nats:
   url: nats://127.0.0.1:4222
 consul:
   address: localhost:8500
+
+badger_password: 1JwFmsc9lxlLfkPl

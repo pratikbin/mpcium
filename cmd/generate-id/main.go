@@ -6,6 +6,9 @@ import (
 	"log"
 	"os"
 
+	"github.com/cryptoniumX/mpcium/pkg/config"
+	"github.com/cryptoniumX/mpcium/pkg/infra"
+	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/google/uuid"
 	"github.com/hashicorp/consul/api"
 )
@@ -61,6 +64,7 @@ func loadPeersFromConsul(kv *api.KV, prefix string) ([]string, error) {
 	pairs, _, err := kv.List(prefix, nil)
 	if err != nil {
 		return nil, err
+
 	}
 
 	fmt.Println("Node IDs with the 'peers' prefix:")
@@ -97,11 +101,14 @@ func printPeers(peers []string) {
 }
 
 func main() {
+	environment := os.Getenv("ENVIRONMENT")
+	config.InitViperConfig(environment)
+	logger.Init(environment)
 	// Create a new Consul client
-	client, err := api.NewClient(api.DefaultConfig())
-	if err != nil {
-		log.Fatal(err)
-	}
+
+	appConfig := config.LoadConfig()
+	logger.Info("App config", "config", appConfig)
+	client := infra.GetConsulClient(environment, appConfig)
 
 	// Create a Key-Value store client
 	kv := client.KV()
