@@ -5,12 +5,15 @@ import (
 	"strings"
 
 	"github.com/cryptoniumX/mpcium/pkg/constant"
+	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/viper"
 )
 
 type AppConfig struct {
 	Consul *ConsulConfig `mapstructure:"consul"`
 	NATs   *NATsConfig   `mapstructure:"nats"`
+
+	BadgerPassword string `mapstructure:"badger_password"`
 }
 
 type ConsulConfig struct {
@@ -36,12 +39,9 @@ func InitViperConfig(environment string) {
 	viper.AddConfigPath(".")    // optionally look for config in the working directory
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
-
 	err := viper.ReadInConfig() // Find and read the config file
-
-	if err != nil { // Handle errors reading the config file
-		log.Fatal("Read config failed", err)
-		return
+	if err != nil {             // Handle errors reading the config file
+		log.Fatal("Fatal error config file: ", err)
 	}
 
 	log.Println("Reading config file:", viper.ConfigFileUsed())
@@ -50,11 +50,23 @@ func InitViperConfig(environment string) {
 
 func LoadConfig() *AppConfig {
 	var config AppConfig
-	err := viper.Unmarshal(&config)
-	if err != nil {
-		log.Fatal("Unmarshal config failed.", err)
+	decoderConfig := &mapstructure.DecoderConfig{
+		Result:           &config,
+		WeaklyTypedInput: true,
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			mapstructure.StringToTimeDurationHookFunc(),
+			mapstructure.StringToSliceHookFunc(","),
+		),
 	}
 
-	log.Println("Unmarshal config successfully!")
+	decoder, err := mapstructure.NewDecoder(decoderConfig)
+	if err != nil {
+		log.Fatal("Failed to create decoder", err)
+	}
+
+	if err := decoder.Decode(viper.AllSettings()); err != nil {
+		log.Fatal("Failed to decode config", err)
+	}
+
 	return &config
 }
