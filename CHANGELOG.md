@@ -2,6 +2,16 @@
 
 This changelog is a work in progress and may contain notes for versions which have not actually been released. Check the [Releases](https://github.com/cryptoniumX/mpcium/releases) page to see full release notes and more information about the latest released versions.
 
+## v0.1.6 (2024-09-22)
+
+- Add deployment script mpcium [View](https://github.com/cryptoniumX/mpcium/commit/5b97ce9b1208eafdf104f4045d6614889d470b93)
+- Log config in generateid script [View](https://github.com/cryptoniumX/mpcium/commit/8f244d313655e5eb8a73b55cc5b3488e36d86488)
+- Update configuration load logic, mask sensitive data [View](https://github.com/cryptoniumX/mpcium/commit/974b7c404a369fa6211386780881cb407ee8eee2)
+- Update makefile [View](https://github.com/cryptoniumX/mpcium/commit/affc8300bf4c4cb18af0cc6a347fc8f1d8e9565a)
+- Fix load config, it doens't load environment variables into struct [View](https://github.com/cryptoniumX/mpcium/commit/744e8ce48dde25fce460eaad4d73ebf2f38e2be3)
+- Implement connection for prod [View](https://github.com/cryptoniumX/mpcium/commit/5e10a81f12c0879fe8ffd1ee918068ebc50114d3)
+- Update changelog [View](https://github.com/cryptoniumX/mpcium/commit/d0572d20839b2b512da04f63ffc2d1fc28610cbf)
+
 ## v0.1.5 (2024-06-22)
 
 - Add a slight delay before start sending key generation messages [View](https://github.com/cryptoniumX/mpcium/commit/c8229c0a32510eb3faeb7dc2025b4832cb65c715)
