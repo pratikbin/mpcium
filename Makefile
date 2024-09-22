@@ -20,11 +20,11 @@ node3:
 	pm2 start ./tmp/main --name=mpcium2 -- --name=node2
 
 node0-prod: 
-	pm2 start ./tmp/main --name=mpcium0-prod -- --name=node0-prod
+	pm2 start ./tmp/main --name=mpcium0-prod -- --name=node0
 node1-prod:
-	pm2 start ./tmp/main --name=mpcium1-prod -- --name=node1-prod
+	pm2 start ./tmp/main --name=mpcium1-prod -- --name=node1
 node2-prod:
-	pm2 start ./tmp/main --name=mpcium2-prod -- --name=node2-prod
+	pm2 start ./tmp/main --name=mpcium2-prod -- --name=node2
 clean:
 
 ifeq ($(WINDOW_NAME),mpcium)
