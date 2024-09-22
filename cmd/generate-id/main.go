@@ -106,9 +106,7 @@ func main() {
 	logger.Init(environment)
 	// Create a new Consul client
 
-	appConfig := config.LoadConfig()
-	logger.Info("App config", "config", appConfig)
-	client := infra.GetConsulClient(environment, appConfig)
+	client := infra.GetConsulClient(environment)
 
 	// Create a Key-Value store client
 	kv := client.KV()

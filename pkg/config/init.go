@@ -1,10 +1,12 @@
 package config
 
 import (
+	"encoding/json"
 	"log"
 	"strings"
 
 	"github.com/cryptoniumX/mpcium/pkg/constant"
+	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/viper"
 )
@@ -14,6 +16,21 @@ type AppConfig struct {
 	NATs   *NATsConfig   `mapstructure:"nats"`
 
 	BadgerPassword string `mapstructure:"badger_password"`
+}
+
+// Implement masking serializer AppConfig
+func (c AppConfig) MarshalJSONMask() string {
+	// clone app config
+	c.BadgerPassword = "********"
+	c.Consul.Password = "********"
+	c.Consul.Token = "********"
+	c.NATs.Password = "********"
+
+	bytes, err := json.Marshal(c)
+	if err != nil {
+		logger.Error("Failed to marshal app config", err)
+	}
+	return string(bytes)
 }
 
 type ConsulConfig struct {

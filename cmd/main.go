@@ -37,9 +37,9 @@ func main() {
 	}
 
 	appConfig := config.LoadConfig()
-	logger.Info("App config", "config", appConfig)
+	logger.Info("App config", "config", appConfig.MarshalJSONMask())
 
-	consulClient := infra.GetConsulClient(environment, appConfig)
+	consulClient := infra.GetConsulClient(environment)
 	badgerKV := NewBadgerKV(*nodeName)
 	defer badgerKV.Close()
 
@@ -47,7 +47,7 @@ func main() {
 	peers := LoadPeersFromConsul(consulClient)
 	nodeID := GetIDFromName(*nodeName, peers)
 
-	natsConn, err := GetNATSConnection(environment, appConfig)
+	natsConn, err := GetNATSConnection(environment)
 	if err != nil {
 		logger.Fatal("Failed to connect to NATS", err)
 	}
@@ -155,18 +155,17 @@ func NewBadgerKV(nodeName string) *kvstore.BadgerKVStore {
 	return badgerKv
 }
 
-func GetNATSConnection(environment string, cfg *config.AppConfig) (*nats.Conn, error) {
+func GetNATSConnection(environment string) (*nats.Conn, error) {
 	if environment != constant.EnvProduction {
 		return nats.Connect(nats.DefaultURL)
 	}
-
 	clientCert := "./certs/client-cert.pem"
 	clientKey := "./certs/client-key.pem"
 	caCert := "./certs/rootCA.pem"
 
-	return nats.Connect(cfg.NATs.URL,
+	return nats.Connect(viper.GetString("nats.url"),
 		nats.ClientCert(clientCert, clientKey),
 		nats.RootCAs(caCert),
-		nats.UserInfo(cfg.NATs.Username, cfg.NATs.Password),
+		nats.UserInfo(viper.GetString("nats.username"), viper.GetString("nats.password")),
 	)
 }
