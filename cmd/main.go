@@ -157,7 +157,7 @@ func NewBadgerKV(nodeName string) *kvstore.BadgerKVStore {
 
 func GetNATSConnection(environment string) (*nats.Conn, error) {
 	if environment != constant.EnvProduction {
-		return nats.Connect(nats.DefaultURL)
+		return nats.Connect(viper.GetString("nats.url"))
 	}
 	clientCert := "./certs/client-cert.pem"
 	clientKey := "./certs/client-key.pem"
