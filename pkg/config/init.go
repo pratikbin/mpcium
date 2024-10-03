@@ -21,10 +21,10 @@ type AppConfig struct {
 // Implement masking serializer AppConfig
 func (c AppConfig) MarshalJSONMask() string {
 	// clone app config
-	c.BadgerPassword = "********"
-	c.Consul.Password = "********"
-	c.Consul.Token = "********"
-	c.NATs.Password = "********"
+	c.BadgerPassword = strings.Repeat("*", len(c.BadgerPassword))
+	c.Consul.Password = strings.Repeat("*", len(c.Consul.Password))
+	c.Consul.Token = strings.Repeat("*", len(c.Consul.Token))
+	c.NATs.Password = strings.Repeat("*", len(c.NATs.Password))
 
 	bytes, err := json.Marshal(c)
 	if err != nil {
