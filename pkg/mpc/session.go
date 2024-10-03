@@ -29,6 +29,7 @@ const (
 )
 
 type Session struct {
+	ID                 string
 	walletID           string
 	pubSub             messaging.PubSub
 	direct             messaging.DirectMessaging
