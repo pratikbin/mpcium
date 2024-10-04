@@ -12,7 +12,6 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
-	"github.com/google/uuid"
 )
 
 const (
@@ -43,11 +42,8 @@ func NewKeygenSession(
 	keyinfoStore keyinfo.Store,
 	successQueue messaging.MessageQueue,
 ) *KeygenSession {
-	sessionID := uuid.New().String()
 	return &KeygenSession{
 		Session: Session{
-			ID:                 sessionID,
-			walletID:           walletID,
 			pubSub:             pubSub,
 			direct:             direct,
 			threshold:          threshold,
@@ -61,10 +57,10 @@ func NewKeygenSession(
 			keyinfoStore:       keyinfoStore,
 			topicComposer: &TopicComposer{
 				ComposeBroadcastTopic: func() string {
-					return fmt.Sprintf("keygen:broadcast:ecdsa:%s:%s", walletID, sessionID)
+					return fmt.Sprintf("keygen:broadcast:ecdsa:%s", walletID)
 				},
 				ComposeDirectTopic: func(nodeID string) string {
-					return fmt.Sprintf("keygen:direct:ecdsa:%s:%s:%s", nodeID, walletID, sessionID)
+					return fmt.Sprintf("keygen:direct:ecdsa:%s:%s", nodeID, walletID)
 				},
 			},
 			composeKey: func(waleltID string) string {

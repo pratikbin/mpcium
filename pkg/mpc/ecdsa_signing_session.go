@@ -90,7 +90,7 @@ func NewSigningSession(
 					return fmt.Sprintf("sign:ecdsa:broadcast:%s", walletID)
 				},
 				ComposeDirectTopic: func(nodeID string) string {
-					return fmt.Sprintf("sign:ecdsa:direct:%s:%s", walletID, nodeID)
+					return fmt.Sprintf("sign:ecdsa:direct:%s:%s", nodeID, walletID)
 				},
 			},
 			composeKey: func(waleltID string) string {

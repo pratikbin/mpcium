@@ -52,7 +52,7 @@ func NewEDDSAKeygenSession(
 				return fmt.Sprintf("keygen:broadcast:eddsa:%s", walletID)
 			},
 			ComposeDirectTopic: func(nodeID string) string {
-				return fmt.Sprintf("keygen:direct:eddsa:%s:%s", walletID, nodeID)
+				return fmt.Sprintf("keygen:direct:eddsa:%s:%s", nodeID, walletID)
 			},
 		},
 		composeKey: func(waleltID string) string {

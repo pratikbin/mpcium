@@ -60,7 +60,7 @@ func NewEDDSASigningSession(
 					return fmt.Sprintf("sign:eddsa:broadcast:%s", walletID)
 				},
 				ComposeDirectTopic: func(nodeID string) string {
-					return fmt.Sprintf("sign:eddsa:direct:%s:%s", walletID, nodeID)
+					return fmt.Sprintf("sign:eddsa:direct:%s:%s", nodeID, walletID)
 				},
 			},
 			composeKey: func(waleltID string) string {
