@@ -152,14 +152,6 @@ func NewBadgerKV(nodeName string) *kvstore.BadgerKVStore {
 		logger.Fatal("Failed to create badger kv store", err)
 	}
 	logger.Info("Connected to badger kv store", "path", dbPath)
-	keys, err := badgerKv.Keys()
-	if err != nil {
-		logger.Fatal("Failed to get keys from badger", err)
-	}
-	for _, key := range keys {
-		logger.Info("Key in badger", "key", key)
-	}
-
 	return badgerKv
 }
 

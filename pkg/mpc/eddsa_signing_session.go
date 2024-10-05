@@ -80,7 +80,6 @@ func (s *EDDSASigningSession) Init(tx *big.Int) error {
 	ctx := tss.NewPeerContext(s.partyIDs)
 	params := tss.NewParameters(tss.Edwards(), ctx, s.selfPartyID, len(s.partyIDs), s.threshold)
 
-	logger.Info("Initializing session with key", "key", s.composeKey(s.walletID))
 	keyData, err := s.kvstore.Get(s.composeKey(s.walletID))
 	if err != nil {
 		return errors.Wrap(err, "Failed to get wallet data from KVStore")
