@@ -2,6 +2,19 @@
 
 This changelog is a work in progress and may contain notes for versions which have not actually been released. Check the [Releases](https://github.com/cryptoniumX/mpcium/releases) page to see full release notes and more information about the latest released versions.
 
+## v0.1.7 (2024-10-05)
+
+- Fix bug sign mutiple transactions simulteneously crash if transactions have the same walletID [View](https://github.com/cryptoniumX/mpcium/commit/7163097387ca2c682f49bab3e4bd8ad58b33ff29)
+- Revert "Debug" [View](https://github.com/cryptoniumX/mpcium/commit/f75077717d7cce0b9cfacb349470269ff1ec427b)
+- Fix don't pass walletId to session [View](https://github.com/cryptoniumX/mpcium/commit/1d505fc8b5724daaf9bbdfa26380ee371ddd95ca)
+- Debug [View](https://github.com/cryptoniumX/mpcium/commit/4810e7f553939821cce33859d871228eeebe0a2b)
+- Fix topic composer logic [View](https://github.com/cryptoniumX/mpcium/commit/203cc7707486c2089a6af61f727fb60962b84b88)
+- Update mask logic [View](https://github.com/cryptoniumX/mpcium/commit/6a3869489ef4881617839fdc1e062582293fc64e)
+- Update topic composer [View](https://github.com/cryptoniumX/mpcium/commit/d06f23f16d9cd47823d1b5a5cae3428ec7bb5617)
+- Minor fix on make file [View](https://github.com/cryptoniumX/mpcium/commit/f376c4f8d170ff49c8eb07b4df8d76a38f2134ae)
+- Fix bug, load nats url from env var [View](https://github.com/cryptoniumX/mpcium/commit/ccfb81159a07f497dc2d8340a3b0b763719e5bcb)
+- Update changelog v0.1.6 [View](https://github.com/cryptoniumX/mpcium/commit/87220e795b44ecc14759e71c5224c62b3bec08d3)
+
 ## v0.1.6 (2024-09-22)
 
 - Add deployment script mpcium [View](https://github.com/cryptoniumX/mpcium/commit/5b97ce9b1208eafdf104f4045d6614889d470b93)
