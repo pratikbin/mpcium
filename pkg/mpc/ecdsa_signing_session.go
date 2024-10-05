@@ -87,10 +87,10 @@ func NewSigningSession(
 			keyinfoStore:       keyinfoStore,
 			topicComposer: &TopicComposer{
 				ComposeBroadcastTopic: func() string {
-					return fmt.Sprintf("sign:ecdsa:broadcast:%s", walletID)
+					return fmt.Sprintf("sign:ecdsa:broadcast:%s:%s", walletID, txID)
 				},
 				ComposeDirectTopic: func(nodeID string) string {
-					return fmt.Sprintf("sign:ecdsa:direct:%s:%s", nodeID, walletID)
+					return fmt.Sprintf("sign:ecdsa:direct:%s:%s", nodeID, txID)
 				},
 			},
 			composeKey: func(waleltID string) string {

@@ -57,10 +57,10 @@ func NewEDDSASigningSession(
 			keyinfoStore: keyinfoStore,
 			topicComposer: &TopicComposer{
 				ComposeBroadcastTopic: func() string {
-					return fmt.Sprintf("sign:eddsa:broadcast:%s", walletID)
+					return fmt.Sprintf("sign:eddsa:broadcast:%s:%s", walletID, txID)
 				},
 				ComposeDirectTopic: func(nodeID string) string {
-					return fmt.Sprintf("sign:eddsa:direct:%s:%s", nodeID, walletID)
+					return fmt.Sprintf("sign:eddsa:direct:%s:%s", nodeID, txID)
 				},
 			},
 			composeKey: func(waleltID string) string {
