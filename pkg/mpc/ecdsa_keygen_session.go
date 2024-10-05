@@ -44,6 +44,7 @@ func NewKeygenSession(
 ) *KeygenSession {
 	return &KeygenSession{
 		Session: Session{
+			walletID:           walletID,
 			pubSub:             pubSub,
 			direct:             direct,
 			threshold:          threshold,
@@ -63,8 +64,8 @@ func NewKeygenSession(
 					return fmt.Sprintf("keygen:direct:ecdsa:%s:%s", nodeID, walletID)
 				},
 			},
-			composeKey: func(waleltID string) string {
-				return fmt.Sprintf("ecdsa:%s", waleltID)
+			composeKey: func(walletID string) string {
+				return fmt.Sprintf("ecdsa:%s", walletID)
 			},
 			getRoundFunc: GetEcdsaMsgRound,
 			successQueue: successQueue,
