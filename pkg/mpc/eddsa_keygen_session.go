@@ -33,7 +33,7 @@ func NewEDDSAKeygenSession(
 	threshold int,
 	kvstore kvstore.KVStore,
 	keyinfoStore keyinfo.Store,
-	successQueue messaging.MessageQueue,
+	resultQueue messaging.MessageQueue,
 ) *EDDSAKeygenSession {
 	return &EDDSAKeygenSession{Session: Session{
 		walletID:           walletID,
@@ -59,7 +59,7 @@ func NewEDDSAKeygenSession(
 			return fmt.Sprintf("eddsa:%s", waleltID)
 		},
 		getRoundFunc: GetEddsaMsgRound,
-		successQueue: successQueue,
+		resultQueue:  resultQueue,
 		sessionType:  SessionTypeEddsa,
 	},
 		endCh: make(chan *keygen.LocalPartySaveData),

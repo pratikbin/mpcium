@@ -141,7 +141,7 @@ func (p *Node) CreateSigningSession(
 	txID string,
 	networkInternalCode string,
 	threshold int,
-	successQueue messaging.MessageQueue,
+	resultQueue messaging.MessageQueue,
 ) (*SigningSession, error) {
 	readyPeerIDs := p.peerRegistry.GetReadyPeersIncludeSelf()
 	selfPartyID, allPartyIDs := p.generatePartyIDs(PurposeKeygen, readyPeerIDs)
@@ -158,7 +158,7 @@ func (p *Node) CreateSigningSession(
 		p.ecdsaPreParams,
 		p.kvstore,
 		p.keyinfoStore,
-		successQueue,
+		resultQueue,
 	)
 	return session, nil
 }
@@ -168,7 +168,7 @@ func (p *Node) CreateEDDSASigningSession(
 	txID string,
 	networkInternalCode string,
 	threshold int,
-	successQueue messaging.MessageQueue,
+	resultQueue messaging.MessageQueue,
 ) (*EDDSASigningSession, error) {
 	readyPeerIDs := p.peerRegistry.GetReadyPeersIncludeSelf()
 	selfPartyID, allPartyIDs := p.generatePartyIDs(PurposeKeygen, readyPeerIDs)
@@ -184,7 +184,7 @@ func (p *Node) CreateEDDSASigningSession(
 		threshold,
 		p.kvstore,
 		p.keyinfoStore,
-		successQueue,
+		resultQueue,
 	)
 	return session, nil
 }

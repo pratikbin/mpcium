@@ -9,9 +9,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cryptoniumX/mpcium/pkg/event"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/cryptoniumX/mpcium/pkg/mpc"
+	"github.com/nats-io/nats.go"
 )
 
 const (
@@ -28,8 +30,8 @@ type eventConsumer struct {
 	node   *mpc.Node
 	pubsub messaging.PubSub
 
-	genKeySucecssQueue  messaging.MessageQueue
-	signingSuccessQueue messaging.MessageQueue
+	genKeySucecssQueue messaging.MessageQueue
+	signingResultQueue messaging.MessageQueue
 
 	keyGenerationSub messaging.Subscription
 	signingSub       messaging.Subscription
@@ -39,13 +41,13 @@ func NewEventConsumer(
 	node *mpc.Node,
 	pubsub messaging.PubSub,
 	genKeySucecssQueue messaging.MessageQueue,
-	signingSuccessQueue messaging.MessageQueue,
+	signingResultQueue messaging.MessageQueue,
 ) EventConsumer {
 	return &eventConsumer{
-		node:                node,
-		pubsub:              pubsub,
-		genKeySucecssQueue:  genKeySucecssQueue,
-		signingSuccessQueue: signingSuccessQueue,
+		node:               node,
+		pubsub:             pubsub,
+		genKeySucecssQueue: genKeySucecssQueue,
+		signingResultQueue: signingResultQueue,
 	}
 }
 
@@ -64,7 +66,8 @@ func (ec *eventConsumer) Run() {
 }
 
 func (ec *eventConsumer) consumeKeyGenerationEvent() error {
-	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(msg []byte) {
+	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(natMsg *nats.Msg) {
+		msg := natMsg.Data
 		walletID := string(msg)
 		// TODO: threshold is configurable
 		threshold := 1
@@ -160,15 +163,16 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 }
 
 func (ec *eventConsumer) consumeTxSigningEvent() error {
-	sub, err := ec.pubsub.Subscribe(MPCSignEvent, func(raw []byte) {
+	sub, err := ec.pubsub.Subscribe(MPCSignEvent, func(natMsg *nats.Msg) {
+		raw := natMsg.Data
 		var msg SignTxMessage
 		err := json.Unmarshal(raw, &msg)
 		if err != nil {
-			logger.Error("Failed to unmarshal message", err)
+			logger.Error("Failed to unmarshal signing message", err)
 			return
 		}
 
-		logger.Info("Received signing event", "waleltID", msg.WalletID, "type", msg.KeyType, "tx", msg.Tx)
+		logger.Info("Received signing event", "waleltID", msg.WalletID, "type", msg.KeyType, "tx", msg.TxID)
 		threshold := 1
 
 		var session mpc.ISigningSession
@@ -179,7 +183,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				msg.TxID,
 				msg.NetworkInternalCode,
 				threshold,
-				ec.signingSuccessQueue,
+				ec.signingResultQueue,
 			)
 		case KeyTypeEd25519:
 			session, err = ec.node.CreateEDDSASigningSession(
@@ -187,20 +191,20 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				msg.TxID,
 				msg.NetworkInternalCode,
 				threshold,
-				ec.signingSuccessQueue,
+				ec.signingResultQueue,
 			)
 
 		}
 
 		if err != nil {
-			logger.Error("Failed to create signing session", err)
+			ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to create signing session")
 			return
 		}
 
 		txBigInt := new(big.Int).SetBytes(msg.Tx)
 		err = session.Init(txBigInt)
 		if err != nil {
-			logger.Error("Failed to init signing session, terminate session", err, "walletID", msg.WalletID)
+			ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to init signing session")
 			return
 		}
 
@@ -211,7 +215,10 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				case <-ctx.Done():
 					return
 				case err := <-session.ErrChan():
-					logger.Error("Signing session error", err)
+					if err != nil {
+						ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to sign tx")
+						return
+					}
 				}
 			}
 		}()
@@ -219,7 +226,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		session.ListenToIncomingMessageAsync()
 		// TODO: use consul distributed lock here
 		time.Sleep(1 * time.Second)
-		go session.Sign(done) // use go routine to not block the event susbscriber
+		go session.Sign(done, natMsg) // use go routine to not block the event susbscriber
 	})
 
 	ec.signingSub = sub
@@ -228,6 +235,31 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 	}
 
 	return nil
+}
+
+func (ec *eventConsumer) handleSigningSessionError(walletID, txID, NetworkInternalCode string, err error, errMsg string) {
+	logger.Error("Signing session error", err, "walletID", walletID, "txID", txID, "error", errMsg)
+	signingResult := event.SigningResultEvent{
+		ResultType:          event.SigningResultTypeError,
+		NetworkInternalCode: NetworkInternalCode,
+		WalletID:            walletID,
+		TxID:                txID,
+		ErrorReason:         errMsg,
+	}
+
+	signingResultBytes, err := json.Marshal(signingResult)
+	if err != nil {
+		logger.Error("Failed to marshal signing result event", err)
+		return
+	}
+
+	err = ec.signingResultQueue.Enqueue(event.SigningResultCompleteTopic, signingResultBytes, &messaging.EnqueueOptions{
+		IdempotententKey: txID,
+	})
+	if err != nil {
+		logger.Error("Failed to publish signing result event", err)
+		return
+	}
 }
 
 // Close and clean up

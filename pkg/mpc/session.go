@@ -12,6 +12,7 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
+	"github.com/nats-io/nats.go"
 )
 
 type TopicComposer struct {
@@ -47,7 +48,7 @@ type Session struct {
 	keyinfoStore keyinfo.Store
 	broadcastSub messaging.Subscription
 	directSub    messaging.Subscription
-	successQueue messaging.MessageQueue
+	resultQueue  messaging.MessageQueue
 
 	topicComposer *TopicComposer
 	composeKey    KeyComposerFn
@@ -136,9 +137,23 @@ func (s *Session) receiveTssMessage(rawMsg []byte) {
 	}
 }
 
+func (s *Session) SendReplySignSuccess(natMsg *nats.Msg) {
+	msg := natMsg.Data
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	err := s.pubSub.Publish(natMsg.Reply, msg)
+	if err != nil {
+		s.ErrCh <- fmt.Errorf("Failed to reply sign sucess message: %w", err)
+		return
+	}
+	logger.Info("Sent reply sign sucess message", "reply", natMsg.Reply)
+}
+
 func (s *Session) ListenToIncomingMessageAsync() {
 	go func() {
-		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(msg []byte) {
+		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(natMsg *nats.Msg) {
+			msg := natMsg.Data
 			s.receiveTssMessage(msg)
 		})
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/cryptoniumX/mpcium/pkg/config"
 	"github.com/cryptoniumX/mpcium/pkg/constant"
+	"github.com/cryptoniumX/mpcium/pkg/event"
 	"github.com/cryptoniumX/mpcium/pkg/eventconsumer"
 	"github.com/cryptoniumX/mpcium/pkg/infra"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
@@ -54,16 +55,26 @@ func main() {
 	defer natsConn.Close()
 
 	pubsub := messaging.NewNATSPubSub(natsConn)
+	signingStream, err := messaging.NewJetStreamPubSub(natsConn, event.SigningPublisherStream, []string{
+		event.SigningRequestTopic,
+	})
+	if err != nil {
+		logger.Fatal("Failed to create JetStream PubSub", err)
+	}
+	signingCounsumer := eventconsumer.NewSigningConsumer(natsConn, signingStream, pubsub)
+	signingCounsumer.Run()
+	defer signingCounsumer.Close()
+
 	directMessaging := messaging.NewNatsDirectMessaging(natsConn)
 	mqManager := messaging.NewNATsMessageQueueManager("mpc", []string{
 		"mpc.mpc_keygen_success.*",
-		"mpc.mpc_sign_success.*",
+		event.SigningResultTopic,
 	}, natsConn)
 
 	genKeySuccessQueue := mqManager.NewMessageQueue("mpc_keygen_success")
 	defer genKeySuccessQueue.Close()
-	singingSuccessQueue := mqManager.NewMessageQueue("mpc_sign_success")
-	defer singingSuccessQueue.Close()
+	singingResultQueue := mqManager.NewMessageQueue("signing_result")
+	defer singingResultQueue.Close()
 
 	logger.Info("Node is running", "peerID", nodeID, "name", *nodeName)
 
@@ -85,10 +96,19 @@ func main() {
 		mpcNode,
 		pubsub,
 		genKeySuccessQueue,
-		singingSuccessQueue,
+		singingResultQueue,
 	)
 	eventConsumer.Run()
 	defer eventConsumer.Close()
+
+	timeoutConsumer := eventconsumer.NewTimeOutConsumer(
+		natsConn,
+		singingResultQueue,
+	)
+
+	timeoutConsumer.Run()
+	defer timeoutConsumer.Close()
+
 	// Create a channel to receive signals
 
 	signals := make(chan os.Signal, 1)

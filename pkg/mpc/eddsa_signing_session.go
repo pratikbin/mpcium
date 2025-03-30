@@ -10,11 +10,13 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/eddsa/signing"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/common/errors"
+	"github.com/cryptoniumX/mpcium/pkg/event"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
+	"github.com/nats-io/nats.go"
 	"github.com/samber/lo"
 )
 
@@ -39,7 +41,7 @@ func NewEDDSASigningSession(
 	threshold int,
 	kvstore kvstore.KVStore,
 	keyinfoStore keyinfo.Store,
-	succesQueue messaging.MessageQueue,
+	resultQueue messaging.MessageQueue,
 ) *EDDSASigningSession {
 	return &EDDSASigningSession{
 		Session: Session{
@@ -67,7 +69,7 @@ func NewEDDSASigningSession(
 				return fmt.Sprintf("eddsa:%s", waleltID)
 			},
 			getRoundFunc: GetEddsaMsgRound,
-			successQueue: succesQueue,
+			resultQueue:  resultQueue,
 		},
 		endCh:               make(chan *common.SignatureData),
 		txID:                txID,
@@ -119,7 +121,7 @@ func (s *EDDSASigningSession) Init(tx *big.Int) error {
 	return nil
 }
 
-func (s *EDDSASigningSession) Sign(done func()) {
+func (s *EDDSASigningSession) Sign(done func(), natMsg *nats.Msg) {
 	logger.Info("Starting signing", "walletID", s.walletID)
 	go func() {
 		if err := s.party.Start(); err != nil {
@@ -146,7 +148,8 @@ func (s *EDDSASigningSession) Sign(done func()) {
 				return
 			}
 
-			r := SigningSuccessEvent{
+			r := event.SigningResultEvent{
+				ResultType:          event.SigningResultTypeSuccess,
 				NetworkInternalCode: s.networkInternalCode,
 				WalletID:            s.walletID,
 				TxID:                s.txID,
@@ -159,7 +162,7 @@ func (s *EDDSASigningSession) Sign(done func()) {
 				return
 			}
 
-			err = s.successQueue.Enqueue(SignSuccessTopic, bytes, &messaging.EnqueueOptions{
+			err = s.resultQueue.Enqueue(event.SigningResultCompleteTopic, bytes, &messaging.EnqueueOptions{
 				IdempotententKey: s.txID,
 			})
 			if err != nil {
@@ -168,6 +171,13 @@ func (s *EDDSASigningSession) Sign(done func()) {
 			}
 
 			logger.Info("[SIGN] Sign successfully", "walletID", s.walletID)
+
+			//Reply to the original message
+			if natMsg.Reply != "" {
+				_ = s.Session.pubSub.Publish(natMsg.Reply, bytes)
+				logger.Info("Reply to the original message", "reply", natMsg.Reply)
+			}
+
 			err = s.Close()
 			if err != nil {
 				logger.Error("Failed to close session", err)

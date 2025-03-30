@@ -1,0 +1,89 @@
+package eventconsumer
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/cryptoniumX/mpcium/pkg/event"
+	"github.com/cryptoniumX/mpcium/pkg/logger"
+	"github.com/cryptoniumX/mpcium/pkg/messaging"
+	"github.com/nats-io/nats.go"
+)
+
+const maxDeliveriesExceededSubject = "$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>"
+
+type timeOutConsumer struct {
+	natsConn    *nats.Conn
+	resultQueue messaging.MessageQueue
+}
+
+func NewTimeOutConsumer(natsConn *nats.Conn, resultQueue messaging.MessageQueue) *timeOutConsumer {
+	return &timeOutConsumer{
+		natsConn:    natsConn,
+		resultQueue: resultQueue,
+	}
+}
+
+func (tc *timeOutConsumer) Run() {
+	sub, err := tc.natsConn.Subscribe(maxDeliveriesExceededSubject, func(msg *nats.Msg) {
+		data := msg.Data
+		var advisory struct {
+			Stream    string `json:"stream"`
+			StreamSeq uint64 `json:"stream_seq"`
+		}
+
+		err := json.Unmarshal(data, &advisory)
+		if err != nil {
+			logger.Error("Failed to unmarshal advisory message", err)
+			return
+		}
+
+		if advisory.Stream != event.SigningPublisherStream {
+			logger.Info("Ignoring advisory message for non-mpc-signing stream", "stream", advisory.Stream)
+			js, _ := tc.natsConn.JetStream()
+			failedMsg, err := js.GetMsg(advisory.Stream, advisory.StreamSeq)
+
+			if err != nil {
+				logger.Error("Failed to retrieve message", err)
+				return
+			}
+
+			data := failedMsg.Data
+			var signErrorResult event.SigningResultEvent
+			err = json.Unmarshal(data, &signErrorResult)
+
+			if err != nil {
+				logger.Error("Failed to unmarshal signing result event", err)
+				return
+			}
+
+			signErrorResult.ResultType = event.SigningResultTypeError
+			signErrorResult.IsTimeout = true
+			signErrorResult.ErrorReason = fmt.Sprintf("Message delivery exceeded for stream %s", advisory.Stream)
+
+			signErrorResultBytes, err := json.Marshal(signErrorResult)
+			if err != nil {
+				logger.Error("Failed to marshal signing result event", err)
+				return
+			}
+
+			err = tc.resultQueue.Enqueue(event.SigningResultTopic, signErrorResultBytes, &messaging.EnqueueOptions{
+				IdempotententKey: signErrorResult.TxID,
+			})
+			if err != nil {
+				logger.Error("Failed to publish signing result event", err)
+				return
+			}
+			logger.Info("Published signing result event for timeout", "txID", signErrorResult.TxID)
+			return
+		}
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer sub.Unsubscribe()
+}
+
+func (tc *timeOutConsumer) Close() error {
+	return nil
+}

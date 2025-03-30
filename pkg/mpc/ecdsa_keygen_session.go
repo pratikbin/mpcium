@@ -40,7 +40,7 @@ func NewKeygenSession(
 	preParams *keygen.LocalPreParams,
 	kvstore kvstore.KVStore,
 	keyinfoStore keyinfo.Store,
-	successQueue messaging.MessageQueue,
+	resultQueue messaging.MessageQueue,
 ) *KeygenSession {
 	return &KeygenSession{
 		Session: Session{
@@ -68,7 +68,7 @@ func NewKeygenSession(
 				return fmt.Sprintf("ecdsa:%s", walletID)
 			},
 			getRoundFunc: GetEcdsaMsgRound,
-			successQueue: successQueue,
+			resultQueue:  resultQueue,
 			sessionType:  SessionTypeEcdsa,
 		},
 		endCh: make(chan *keygen.LocalPartySaveData),
