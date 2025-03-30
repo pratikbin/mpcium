@@ -197,14 +197,18 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		}
 
 		if err != nil {
-			ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to create signing session")
+			ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to create signing session", natMsg)
 			return
 		}
 
 		txBigInt := new(big.Int).SetBytes(msg.Tx)
 		err = session.Init(txBigInt)
 		if err != nil {
-			ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to init signing session")
+			if err.Error() == "Not enough participants to sign" {
+				//Return for retry later
+				return
+			}
+			ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to init signing session", natMsg)
 			return
 		}
 
@@ -216,7 +220,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 					return
 				case err := <-session.ErrChan():
 					if err != nil {
-						ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to sign tx")
+						ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to sign tx", natMsg)
 						return
 					}
 				}
@@ -237,7 +241,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 	return nil
 }
 
-func (ec *eventConsumer) handleSigningSessionError(walletID, txID, NetworkInternalCode string, err error, errMsg string) {
+func (ec *eventConsumer) handleSigningSessionError(walletID, txID, NetworkInternalCode string, err error, errMsg string, natMsg *nats.Msg) {
 	logger.Error("Signing session error", err, "walletID", walletID, "txID", txID, "error", errMsg)
 	signingResult := event.SigningResultEvent{
 		ResultType:          event.SigningResultTypeError,
@@ -251,6 +255,11 @@ func (ec *eventConsumer) handleSigningSessionError(walletID, txID, NetworkIntern
 	if err != nil {
 		logger.Error("Failed to marshal signing result event", err)
 		return
+	}
+
+	if natMsg.Reply != "" {
+		_ = ec.pubsub.Publish(natMsg.Reply, signingResultBytes)
+		logger.Info("Reply to the original message", "reply", natMsg.Reply)
 	}
 
 	err = ec.signingResultQueue.Enqueue(event.SigningResultCompleteTopic, signingResultBytes, &messaging.EnqueueOptions{

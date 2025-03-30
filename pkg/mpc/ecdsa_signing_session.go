@@ -107,7 +107,9 @@ func (s *SigningSession) Init(tx *big.Int) error {
 	}
 
 	if len(s.participantPeerIDs) < keyInfo.Threshold+1 {
-		return fmt.Errorf("Not enough participants to sign, expected %d, got %d", keyInfo.Threshold+1, len(s.participantPeerIDs))
+		err := fmt.Errorf("Not enough participants to sign")
+		logger.Warn("Not enough participants to sign", "participants", s.participantPeerIDs, "expected", keyInfo.Threshold+1)
+		return err
 	}
 
 	// check if t+1 participants are present

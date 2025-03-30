@@ -37,9 +37,10 @@ func (tc *timeOutConsumer) Run() {
 			logger.Error("Failed to unmarshal advisory message", err)
 			return
 		}
+		logger.Info("Received advisory message", "stream", advisory.Stream, "stream_seq", advisory.StreamSeq)
 
-		if advisory.Stream != event.SigningPublisherStream {
-			logger.Info("Ignoring advisory message for non-mpc-signing stream", "stream", advisory.Stream)
+		if advisory.Stream == event.SigningPublisherStream {
+			logger.Info("Received max deliveries exceeded advisory", "stream", advisory.Stream, "stream_seq", advisory.StreamSeq)
 			js, _ := tc.natsConn.JetStream()
 			failedMsg, err := js.GetMsg(advisory.Stream, advisory.StreamSeq)
 
@@ -79,7 +80,8 @@ func (tc *timeOutConsumer) Run() {
 		}
 	})
 	if err != nil {
-		panic(err)
+		logger.Error("Failed to subscribe to max deliveries exceeded subject", err)
+		return
 	}
 	defer sub.Unsubscribe()
 }
