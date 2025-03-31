@@ -61,9 +61,6 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to create JetStream PubSub", err)
 	}
-	signingCounsumer := eventconsumer.NewSigningConsumer(natsConn, signingStream, pubsub)
-	signingCounsumer.Run()
-	defer signingCounsumer.Close()
 
 	directMessaging := messaging.NewNatsDirectMessaging(natsConn)
 	mqManager := messaging.NewNATsMessageQueueManager("mpc", []string{
@@ -108,6 +105,10 @@ func main() {
 
 	timeoutConsumer.Run()
 	defer timeoutConsumer.Close()
+
+	signingCounsumer := eventconsumer.NewSigningConsumer(natsConn, signingStream, pubsub)
+	signingCounsumer.Run()
+	defer signingCounsumer.Close()
 
 	// Create a channel to receive signals
 

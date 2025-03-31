@@ -10,11 +10,13 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
+// Other service not listen to this subject that make loss of message
 const maxDeliveriesExceededSubject = "$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>"
 
 type timeOutConsumer struct {
 	natsConn    *nats.Conn
 	resultQueue messaging.MessageQueue
+	advisorySub messaging.Subscription
 }
 
 func NewTimeOutConsumer(natsConn *nats.Conn, resultQueue messaging.MessageQueue) *timeOutConsumer {
@@ -25,6 +27,7 @@ func NewTimeOutConsumer(natsConn *nats.Conn, resultQueue messaging.MessageQueue)
 }
 
 func (tc *timeOutConsumer) Run() {
+	logger.Info("Starting advisory consumer for max deliveries exceeded")
 	sub, err := tc.natsConn.Subscribe(maxDeliveriesExceededSubject, func(msg *nats.Msg) {
 		data := msg.Data
 		var advisory struct {
@@ -83,9 +86,14 @@ func (tc *timeOutConsumer) Run() {
 		logger.Error("Failed to subscribe to max deliveries exceeded subject", err)
 		return
 	}
-	defer sub.Unsubscribe()
+
+	tc.advisorySub = sub
 }
 
 func (tc *timeOutConsumer) Close() error {
+	err := tc.advisorySub.Unsubscribe()
+	if err != nil {
+		return err
+	}
 	return nil
 }
