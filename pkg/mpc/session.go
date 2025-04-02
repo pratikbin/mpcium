@@ -15,6 +15,10 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
+var (
+	ErrNotEnoughParticipants = errors.New("Not enough participants to sign")
+)
+
 type TopicComposer struct {
 	ComposeBroadcastTopic func() string
 	ComposeDirectTopic    func(nodeID string) string

@@ -3,6 +3,7 @@ package eventconsumer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -145,9 +146,6 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		go eddsaSession.GenerateKey(doneEddsa)
 
 		wg.Wait()
-		if err != nil {
-			logger.Error("Errors when closing sessions", err)
-		}
 		logger.Info("Closing section successfully!", "event", successEvent)
 
 		successEventBytes, err := json.Marshal(successEvent)
@@ -165,9 +163,6 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		}
 
 		logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", walletID)
-		if err != nil {
-			logger.Error("Failed to close session", err)
-		}
 
 	})
 
@@ -193,6 +188,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		// Check for duplicate session and track if new
 		if ec.checkDuplicateSession(msg.WalletID, msg.TxID) {
+			natMsg.Term()
 			return
 		}
 
@@ -217,8 +213,6 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		}
 
-		ec.addSession(msg.WalletID, msg.TxID)
-
 		if err != nil {
 			ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to create signing session", natMsg)
 			return
@@ -227,13 +221,17 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		txBigInt := new(big.Int).SetBytes(msg.Tx)
 		err = session.Init(txBigInt)
 		if err != nil {
-			if err.Error() == "Not enough participants to sign" {
+			if errors.Is(err, mpc.ErrNotEnoughParticipants) {
+				logger.Info("RETRY LATER: Not enough participants to sign")
 				//Return for retry later
 				return
 			}
 			ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to init signing session", natMsg)
 			return
 		}
+
+		// Mark session as already processed
+		ec.addSession(msg.WalletID, msg.TxID)
 
 		ctx, done := context.WithCancel(context.Background())
 		go func() {
@@ -251,7 +249,13 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		}()
 
 		session.ListenToIncomingMessageAsync()
-		// TODO: use consul distributed lock here
+		// TODO: use consul distributed lock here, only sign after all nodes has already completed listing to incoming message async
+		// The purpose of the sleep is to be ensuring that the node has properly set up its message listeners
+		// before it starts the signing process. If the signing process starts sending messages before other nodes
+		// have set up their listeners, those messages might be missed, potentially causing the signing process to fail.
+		// One solution:
+		// The messaging includes mechanisms for direct point-to-point communication (in point2point.go).
+		// The nodes could explicitly coordinate through request-response patterns before starting signing
 		time.Sleep(1 * time.Second)
 		go session.Sign(done, natMsg) // use go routine to not block the event susbscriber
 	})
@@ -353,11 +357,6 @@ func (ec *eventConsumer) checkDuplicateSession(walletID, txID string) bool {
 		logger.Info("Duplicate signing request detected", "walletID", walletID, "txID", txID)
 		return true
 	}
-
-	// Mark as active
-	ec.sessionsLock.Lock()
-	ec.activeSessions[sessionID] = time.Now()
-	ec.sessionsLock.Unlock()
 
 	return false
 }
