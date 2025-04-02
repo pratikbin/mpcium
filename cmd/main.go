@@ -105,8 +105,11 @@ func main() {
 
 	timeoutConsumer.Run()
 	defer timeoutConsumer.Close()
-
 	signingCounsumer := eventconsumer.NewSigningConsumer(natsConn, signingStream, pubsub)
+
+	// Make the node ready before starting the signing consumer
+	peerRegistry.Ready()
+
 	signingCounsumer.Run()
 	defer signingCounsumer.Close()
 

@@ -229,6 +229,7 @@ func (j *jetStreamPubSub) Subscribe(name string, topic string, handler func(msg 
 		BackOff:       []time.Duration{60 * time.Second, 60 * time.Second, 60 * time.Second},
 		DeliverPolicy: jetstream.DeliverAllPolicy, // Deliver all messages
 		FilterSubject: topic,
+		AckWait:       30 * time.Second, // explicitly set ack wait here
 	}
 
 	logger.Info("Creating consumer", "config", consumerConfig, "stream", j.config.streamName)

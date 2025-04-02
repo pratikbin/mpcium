@@ -35,6 +35,13 @@ type eventConsumer struct {
 
 	keyGenerationSub messaging.Subscription
 	signingSub       messaging.Subscription
+
+	// Track active sessions with timestamps for cleanup
+	activeSessions  map[string]time.Time // Maps "walletID-txID" to creation time
+	sessionsLock    sync.RWMutex
+	cleanupInterval time.Duration // How often to run cleanup
+	sessionTimeout  time.Duration // How long before a session is considered stale
+	cleanupStopChan chan struct{} // Signal to stop cleanup goroutine
 }
 
 func NewEventConsumer(
@@ -43,12 +50,21 @@ func NewEventConsumer(
 	genKeySucecssQueue messaging.MessageQueue,
 	signingResultQueue messaging.MessageQueue,
 ) EventConsumer {
-	return &eventConsumer{
+	ec := &eventConsumer{
 		node:               node,
 		pubsub:             pubsub,
 		genKeySucecssQueue: genKeySucecssQueue,
 		signingResultQueue: signingResultQueue,
+		activeSessions:     make(map[string]time.Time),
+		cleanupInterval:    5 * time.Minute,  // Run cleanup every 5 minutes
+		sessionTimeout:     30 * time.Minute, // Consider sessions older than 30 minutes stale
+		cleanupStopChan:    make(chan struct{}),
 	}
+
+	// Start background cleanup goroutine
+	go ec.sessionCleanupRoutine()
+
+	return ec
 }
 
 func (ec *eventConsumer) Run() {
@@ -175,6 +191,11 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		logger.Info("Received signing event", "waleltID", msg.WalletID, "type", msg.KeyType, "tx", msg.TxID)
 		threshold := 1
 
+		// Check for duplicate session and track if new
+		if ec.checkDuplicateSession(msg.WalletID, msg.TxID) {
+			return
+		}
+
 		var session mpc.ISigningSession
 		switch msg.KeyType {
 		case KeyTypeSecp256k1:
@@ -195,6 +216,8 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			)
 
 		}
+
+		ec.addSession(msg.WalletID, msg.TxID)
 
 		if err != nil {
 			ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to create signing session", natMsg)
@@ -271,8 +294,79 @@ func (ec *eventConsumer) handleSigningSessionError(walletID, txID, NetworkIntern
 	}
 }
 
+// Add a cleanup routine that runs periodically
+func (ec *eventConsumer) sessionCleanupRoutine() {
+	ticker := time.NewTicker(ec.cleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			ec.cleanupStaleSessions()
+		case <-ec.cleanupStopChan:
+			return
+		}
+	}
+}
+
+// Cleanup stale sessions
+func (ec *eventConsumer) cleanupStaleSessions() {
+	now := time.Now()
+	ec.sessionsLock.Lock()
+	defer ec.sessionsLock.Unlock()
+
+	for sessionID, creationTime := range ec.activeSessions {
+		if now.Sub(creationTime) > ec.sessionTimeout {
+			logger.Info("Cleaning up stale session", "sessionID", sessionID, "age", now.Sub(creationTime))
+			delete(ec.activeSessions, sessionID)
+		}
+	}
+}
+
+// markSessionAsActive marks a session as active with the current timestamp
+func (ec *eventConsumer) addSession(walletID, txID string) {
+	sessionID := fmt.Sprintf("%s-%s", walletID, txID)
+	ec.sessionsLock.Lock()
+	ec.activeSessions[sessionID] = time.Now()
+	ec.sessionsLock.Unlock()
+}
+
+// Remove a session from tracking
+func (ec *eventConsumer) removeSession(walletID, txID string) {
+	sessionID := fmt.Sprintf("%s-%s", walletID, txID)
+	ec.sessionsLock.Lock()
+	delete(ec.activeSessions, sessionID)
+	ec.sessionsLock.Unlock()
+}
+
+// checkAndTrackSession checks if a session already exists and tracks it if new.
+// Returns true if the session is a duplicate.
+func (ec *eventConsumer) checkDuplicateSession(walletID, txID string) bool {
+	sessionID := fmt.Sprintf("%s-%s", walletID, txID)
+
+	// Check for duplicate
+	ec.sessionsLock.RLock()
+	_, isDuplicate := ec.activeSessions[sessionID]
+	ec.sessionsLock.RUnlock()
+
+	if isDuplicate {
+		logger.Info("Duplicate signing request detected", "walletID", walletID, "txID", txID)
+		return true
+	}
+
+	// Mark as active
+	ec.sessionsLock.Lock()
+	ec.activeSessions[sessionID] = time.Now()
+	ec.sessionsLock.Unlock()
+
+	return false
+}
+
 // Close and clean up
 func (ec *eventConsumer) Close() error {
+	// Signal cleanup routine to stop
+	close(ec.cleanupStopChan)
+
 	err := ec.keyGenerationSub.Unsubscribe()
 	if err != nil {
 		return err

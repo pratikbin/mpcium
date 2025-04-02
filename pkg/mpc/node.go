@@ -68,7 +68,6 @@ func NewNode(
 	}
 	logger.Info("Starting new node, preparams is generated successfully!")
 
-	peerRegistry.Ready()
 	go peerRegistry.WatchPeersReady()
 
 	return &Node{
