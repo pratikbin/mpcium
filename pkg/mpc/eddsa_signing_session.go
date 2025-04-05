@@ -93,7 +93,8 @@ func (s *EDDSASigningSession) Init(tx *big.Int) error {
 	}
 
 	if len(s.participantPeerIDs) < keyInfo.Threshold+1 {
-		return fmt.Errorf("Not enough participants to sign, expected %d, got %d", keyInfo.Threshold+1, len(s.participantPeerIDs))
+		logger.Warn("Not enough participants to sign, expected %d, got %d", keyInfo.Threshold+1, len(s.participantPeerIDs))
+		return ErrNotEnoughParticipants
 	}
 
 	// check if t+1 participants are present
