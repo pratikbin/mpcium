@@ -1,6 +1,13 @@
 # CHANGELOG
 
-This changelog is a work in progress and may contain notes for versions which have not actually been released. Check the [Releases](https://github.com/cryptoniumX/mpcium/releases) page to see full release notes and more information about the latest released versions.
+## v0.2.0 (2025-04-12)
+
+- Use onSuccess callback when sign session succeeds [View](https://github.com/cryptoniumX/mpcium/commit/9602d4d9bfe37c2d038856d3ed206bfecd2e8c93)
+- Fix bug signing doesn't work after all nodes are backup [View](https://github.com/cryptoniumX/mpcium/commit/a9192ca11581dd986bdd21728cbda4b78d75a753)
+- Handle duplicate message [View](https://github.com/cryptoniumX/mpcium/commit/e79f6e20fbe225e5aad8b0c9e70578356fce9573)
+- Update timeout consumer keep subscribe on time [View](https://github.com/cryptoniumX/mpcium/commit/52ee83c3ecc2bbb8c16a8227f4f00b72a57c8499)
+- Update signing timeout logic when not enough participants [View](https://github.com/cryptoniumX/mpcium/commit/e8ffa381f489a83e60dbcbf5262927e99eca2382)
+- Persit message, handle failure and timeout sign tx [View](https://github.com/cryptoniumX/mpcium/commit/400f26912ea6b31cbf511de93c1270776055c758)
 
 ## v0.1.7 (2024-10-05)
 
