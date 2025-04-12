@@ -12,7 +12,7 @@ var Log zerolog.Logger
 func Init(env string) {
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 	if env != "production" {
-		Log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, NoColor: false}).With().Timestamp().Logger()
+		Log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, NoColor: false, TimeFormat: "2006-01-02 15:04:05.000"}).With().Timestamp().Logger()
 	} else {
 		Log = zerolog.New(os.Stdout).With().Timestamp().Logger()
 	}

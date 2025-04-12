@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/cryptoniumX/mpcium/pkg/config"
 	"github.com/cryptoniumX/mpcium/pkg/constant"
+	"github.com/cryptoniumX/mpcium/pkg/event"
 	"github.com/cryptoniumX/mpcium/pkg/eventconsumer"
 	"github.com/cryptoniumX/mpcium/pkg/infra"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
@@ -54,16 +56,23 @@ func main() {
 	defer natsConn.Close()
 
 	pubsub := messaging.NewNATSPubSub(natsConn)
+	signingStream, err := messaging.NewJetStreamPubSub(natsConn, event.SigningPublisherStream, []string{
+		event.SigningRequestTopic,
+	})
+	if err != nil {
+		logger.Fatal("Failed to create JetStream PubSub", err)
+	}
+
 	directMessaging := messaging.NewNatsDirectMessaging(natsConn)
 	mqManager := messaging.NewNATsMessageQueueManager("mpc", []string{
 		"mpc.mpc_keygen_success.*",
-		"mpc.mpc_sign_success.*",
+		event.SigningResultTopic,
 	}, natsConn)
 
 	genKeySuccessQueue := mqManager.NewMessageQueue("mpc_keygen_success")
 	defer genKeySuccessQueue.Close()
-	singingSuccessQueue := mqManager.NewMessageQueue("mpc_sign_success")
-	defer singingSuccessQueue.Close()
+	singingResultQueue := mqManager.NewMessageQueue("signing_result")
+	defer singingResultQueue.Close()
 
 	logger.Info("Node is running", "peerID", nodeID, "name", *nodeName)
 
@@ -85,18 +94,36 @@ func main() {
 		mpcNode,
 		pubsub,
 		genKeySuccessQueue,
-		singingSuccessQueue,
+		singingResultQueue,
 	)
 	eventConsumer.Run()
 	defer eventConsumer.Close()
-	// Create a channel to receive signals
 
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	timeoutConsumer := eventconsumer.NewTimeOutConsumer(
+		natsConn,
+		singingResultQueue,
+	)
 
-	// Block the execution until a signal is received
-	<-signals
+	timeoutConsumer.Run()
+	defer timeoutConsumer.Close()
+	signingConsumer := eventconsumer.NewSigningConsumer(natsConn, signingStream, pubsub)
 
+	// Make the node ready before starting the signing consumer
+	peerRegistry.Ready()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Setup signal handling to cancel context on termination signals.
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		<-sigChan
+		logger.Warn("Shutdown signal received, canceling context...")
+		cancel()
+	}()
+
+	if err := signingConsumer.Run(ctx); err != nil {
+		logger.Error("error running consumer:", err)
+	}
 }
 
 func NewConsulClient(addr string) *api.Client {

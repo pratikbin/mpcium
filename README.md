@@ -32,3 +32,7 @@ $ go run cmd/main.go --name=mpcium1
 $ go run cmd/main.go --name=mpcium2
 
 ```
+
+### Diagaram
+
+![Diagram](images/diagram.png)

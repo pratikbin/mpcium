@@ -11,15 +11,12 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/common/errors"
+	"github.com/cryptoniumX/mpcium/pkg/event"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/samber/lo"
-)
-
-const (
-	SignSuccessTopic = "mpc.mpc_sign_success.completed"
 )
 
 // Ecdsa signing session
@@ -41,19 +38,7 @@ type ISigningSession interface {
 	ISession
 
 	Init(tx *big.Int) error
-	Sign(done func())
-}
-
-type SigningSuccessEvent struct {
-	NetworkInternalCode string `json:"network_internal_code"`
-	WalletID            string `json:"wallet_id"`
-	TxID                string `json:"tx_id"`
-	R                   []byte `json:"r"`
-	S                   []byte `json:"s"`
-	SignatureRecovery   []byte `json:"signature_recovery"`
-
-	// TODO: define two separate events for eddsa and ecdsa
-	Signature []byte `json:"signature"`
+	Sign(onSuccess func(data []byte))
 }
 
 func NewSigningSession(
@@ -69,7 +54,7 @@ func NewSigningSession(
 	preParams *keygen.LocalPreParams,
 	kvstore kvstore.KVStore,
 	keyinfoStore keyinfo.Store,
-	succesQueue messaging.MessageQueue,
+	resultQueue messaging.MessageQueue,
 ) *SigningSession {
 	return &SigningSession{
 		Session: Session{
@@ -97,7 +82,7 @@ func NewSigningSession(
 				return fmt.Sprintf("ecdsa:%s", waleltID)
 			},
 			getRoundFunc: GetEcdsaMsgRound,
-			successQueue: succesQueue,
+			resultQueue:  resultQueue,
 		},
 		endCh:               make(chan *common.SignatureData),
 		txID:                txID,
@@ -121,7 +106,8 @@ func (s *SigningSession) Init(tx *big.Int) error {
 	}
 
 	if len(s.participantPeerIDs) < keyInfo.Threshold+1 {
-		return fmt.Errorf("Not enough participants to sign, expected %d, got %d", keyInfo.Threshold+1, len(s.participantPeerIDs))
+		logger.Warn("Not enough participants to sign", "participants", s.participantPeerIDs, "expected", keyInfo.Threshold+1)
+		return ErrNotEnoughParticipants
 	}
 
 	// check if t+1 participants are present
@@ -149,7 +135,7 @@ func (s *SigningSession) Init(tx *big.Int) error {
 	return nil
 }
 
-func (s *SigningSession) Sign(done func()) {
+func (s *SigningSession) Sign(onSuccess func(data []byte)) {
 	logger.Info("Starting signing", "walletID", s.walletID)
 	go func() {
 		if err := s.party.Start(); err != nil {
@@ -176,7 +162,8 @@ func (s *SigningSession) Sign(done func()) {
 				return
 			}
 
-			r := SigningSuccessEvent{
+			r := event.SigningResultEvent{
+				ResultType:          event.SigningResultTypeSuccess,
 				NetworkInternalCode: s.networkInternalCode,
 				WalletID:            s.walletID,
 				TxID:                s.txID,
@@ -191,7 +178,7 @@ func (s *SigningSession) Sign(done func()) {
 				return
 			}
 
-			err = s.successQueue.Enqueue(SignSuccessTopic, bytes, &messaging.EnqueueOptions{
+			err = s.resultQueue.Enqueue(event.SigningResultCompleteTopic, bytes, &messaging.EnqueueOptions{
 				IdempotententKey: s.txID,
 			})
 			if err != nil {
@@ -206,7 +193,7 @@ func (s *SigningSession) Sign(done func()) {
 				logger.Error("Failed to close session", err)
 			}
 
-			done()
+			onSuccess(bytes)
 			return
 		}
 
