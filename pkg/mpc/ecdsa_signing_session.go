@@ -16,7 +16,6 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
-	"github.com/nats-io/nats.go"
 	"github.com/samber/lo"
 )
 
@@ -39,7 +38,7 @@ type ISigningSession interface {
 	ISession
 
 	Init(tx *big.Int) error
-	Sign(done func(), natMsg *nats.Msg)
+	Sign(onSuccess func(data []byte))
 }
 
 func NewSigningSession(
@@ -136,7 +135,7 @@ func (s *SigningSession) Init(tx *big.Int) error {
 	return nil
 }
 
-func (s *SigningSession) Sign(done func(), natMsg *nats.Msg) {
+func (s *SigningSession) Sign(onSuccess func(data []byte)) {
 	logger.Info("Starting signing", "walletID", s.walletID)
 	go func() {
 		if err := s.party.Start(); err != nil {
@@ -188,19 +187,13 @@ func (s *SigningSession) Sign(done func(), natMsg *nats.Msg) {
 				return
 			}
 
-			//Reply to the original message
-			if natMsg.Reply != "" {
-				_ = s.Session.pubSub.Publish(natMsg.Reply, bytes)
-				logger.Info("Reply to the original message", "reply", natMsg.Reply)
-			}
-
 			logger.Info("[SIGN] Sign successfully", "walletID", s.walletID)
 			err = s.Close()
 			if err != nil {
 				logger.Error("Failed to close session", err)
 			}
 
-			done()
+			onSuccess(bytes)
 			return
 		}
 

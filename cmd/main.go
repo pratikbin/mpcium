@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -105,22 +106,24 @@ func main() {
 
 	timeoutConsumer.Run()
 	defer timeoutConsumer.Close()
-	signingCounsumer := eventconsumer.NewSigningConsumer(natsConn, signingStream, pubsub)
+	signingConsumer := eventconsumer.NewSigningConsumer(natsConn, signingStream, pubsub)
 
 	// Make the node ready before starting the signing consumer
 	peerRegistry.Ready()
 
-	signingCounsumer.Run()
-	defer signingCounsumer.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	// Setup signal handling to cancel context on termination signals.
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		<-sigChan
+		logger.Warn("Shutdown signal received, canceling context...")
+		cancel()
+	}()
 
-	// Create a channel to receive signals
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-
-	// Block the execution until a signal is received
-	<-signals
-
+	if err := signingConsumer.Run(ctx); err != nil {
+		logger.Error("error running consumer:", err)
+	}
 }
 
 func NewConsulClient(addr string) *api.Client {

@@ -16,7 +16,6 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
-	"github.com/nats-io/nats.go"
 	"github.com/samber/lo"
 )
 
@@ -122,7 +121,7 @@ func (s *EDDSASigningSession) Init(tx *big.Int) error {
 	return nil
 }
 
-func (s *EDDSASigningSession) Sign(done func(), natMsg *nats.Msg) {
+func (s *EDDSASigningSession) Sign(onSuccess func(data []byte)) {
 	logger.Info("Starting signing", "walletID", s.walletID)
 	go func() {
 		if err := s.party.Start(); err != nil {
@@ -173,18 +172,12 @@ func (s *EDDSASigningSession) Sign(done func(), natMsg *nats.Msg) {
 
 			logger.Info("[SIGN] Sign successfully", "walletID", s.walletID)
 
-			//Reply to the original message
-			if natMsg.Reply != "" {
-				_ = s.Session.pubSub.Publish(natMsg.Reply, bytes)
-				logger.Info("Reply to the original message", "reply", natMsg.Reply)
-			}
-
 			err = s.Close()
 			if err != nil {
 				logger.Error("Failed to close session", err)
 			}
 
-			done()
+			onSuccess(bytes)
 			return
 		}
 

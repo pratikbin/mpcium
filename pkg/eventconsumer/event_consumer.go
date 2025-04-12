@@ -183,7 +183,17 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			return
 		}
 
-		logger.Info("Received signing event", "waleltID", msg.WalletID, "type", msg.KeyType, "tx", msg.TxID)
+		logger.Info(
+			"Received signing event",
+			"waleltID",
+			msg.WalletID,
+			"type",
+			msg.KeyType,
+			"tx",
+			msg.TxID,
+			"Id",
+			ec.node.ID(),
+		)
 		threshold := 1
 
 		// Check for duplicate session and track if new
@@ -214,7 +224,14 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		}
 
 		if err != nil {
-			ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to create signing session", natMsg)
+			ec.handleSigningSessionError(
+				msg.WalletID,
+				msg.TxID,
+				msg.NetworkInternalCode,
+				err,
+				"Failed to create signing session",
+				natMsg,
+			)
 			return
 		}
 
@@ -226,7 +243,14 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				//Return for retry later
 				return
 			}
-			ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to init signing session", natMsg)
+			ec.handleSigningSessionError(
+				msg.WalletID,
+				msg.TxID,
+				msg.NetworkInternalCode,
+				err,
+				"Failed to init signing session",
+				natMsg,
+			)
 			return
 		}
 
@@ -241,7 +265,14 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 					return
 				case err := <-session.ErrChan():
 					if err != nil {
-						ec.handleSigningSessionError(msg.WalletID, msg.TxID, msg.NetworkInternalCode, err, "Failed to sign tx", natMsg)
+						ec.handleSigningSessionError(
+							msg.WalletID,
+							msg.TxID,
+							msg.NetworkInternalCode,
+							err,
+							"Failed to sign tx",
+							natMsg,
+						)
 						return
 					}
 				}
@@ -257,7 +288,19 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		// The messaging includes mechanisms for direct point-to-point communication (in point2point.go).
 		// The nodes could explicitly coordinate through request-response patterns before starting signing
 		time.Sleep(1 * time.Second)
-		go session.Sign(done, natMsg) // use go routine to not block the event susbscriber
+
+		onSuccess := func(data []byte) {
+			done()
+			if natMsg.Reply != "" {
+				err = ec.pubsub.Publish(natMsg.Reply, data)
+				if err != nil {
+					logger.Error("Failed to publish reply", err)
+				} else {
+					logger.Info("Reply to the original message", "reply", natMsg.Reply)
+				}
+			}
+		}
+		go session.Sign(onSuccess)
 	})
 
 	ec.signingSub = sub
@@ -284,11 +327,7 @@ func (ec *eventConsumer) handleSigningSessionError(walletID, txID, NetworkIntern
 		return
 	}
 
-	if natMsg.Reply != "" {
-		_ = ec.pubsub.Publish(natMsg.Reply, signingResultBytes)
-		logger.Info("Reply to the original message", "reply", natMsg.Reply)
-	}
-
+	natMsg.Ack()
 	err = ec.signingResultQueue.Enqueue(event.SigningResultCompleteTopic, signingResultBytes, &messaging.EnqueueOptions{
 		IdempotententKey: txID,
 	})

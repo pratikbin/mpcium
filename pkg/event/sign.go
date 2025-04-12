@@ -13,7 +13,8 @@ const (
 type SigningResultType int
 
 const (
-	SigningResultTypeSuccess SigningResultType = iota
+	SigningResultTypeUnknown SigningResultType = iota
+	SigningResultTypeSuccess
 	SigningResultTypeError
 )
 
