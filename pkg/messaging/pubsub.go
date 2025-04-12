@@ -225,7 +225,7 @@ func (j *jetStreamPubSub) Subscribe(name string, topic string, handler func(msg 
 		Name:          sanitizeConsumerName(name),
 		Durable:       sanitizeConsumerName(name),
 		AckPolicy:     jetstream.AckExplicitPolicy,
-		MaxDeliver:    3,
+		MaxDeliver:    4,
 		BackOff:       []time.Duration{30 * time.Second, 30 * time.Second, 30 * time.Second},
 		DeliverPolicy: jetstream.DeliverAllPolicy, // Deliver all messages
 		FilterSubject: topic,
