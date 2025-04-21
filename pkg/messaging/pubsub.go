@@ -181,6 +181,7 @@ func NewJetStreamPubSub(natsConn *nats.Conn, streamName string, subjects []strin
 		Name:        streamName,
 		Description: "Stream for " + streamName,
 		Subjects:    subjects,
+		MaxAge:      3 * time.Minute,
 	})
 
 	if err != nil {
