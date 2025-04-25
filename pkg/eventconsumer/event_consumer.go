@@ -15,6 +15,7 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/cryptoniumX/mpcium/pkg/mpc"
 	"github.com/nats-io/nats.go"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -28,8 +29,9 @@ type EventConsumer interface {
 }
 
 type eventConsumer struct {
-	node   *mpc.Node
-	pubsub messaging.PubSub
+	node         *mpc.Node
+	pubsub       messaging.PubSub
+	mpcThreshold int
 
 	genKeySucecssQueue messaging.MessageQueue
 	signingResultQueue messaging.MessageQueue
@@ -60,6 +62,7 @@ func NewEventConsumer(
 		cleanupInterval:    5 * time.Minute,  // Run cleanup every 5 minutes
 		sessionTimeout:     30 * time.Minute, // Consider sessions older than 30 minutes stale
 		cleanupStopChan:    make(chan struct{}),
+		mpcThreshold:       viper.GetInt("mpc_threshold"),
 	}
 
 	// Start background cleanup goroutine
@@ -86,14 +89,12 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(natMsg *nats.Msg) {
 		msg := natMsg.Data
 		walletID := string(msg)
-		// TODO: threshold is configurable
-		threshold := 1
-		session, err := ec.node.CreateKeyGenSession(walletID, threshold, ec.genKeySucecssQueue)
+		session, err := ec.node.CreateKeyGenSession(walletID, ec.mpcThreshold, ec.genKeySucecssQueue)
 		if err != nil {
 			logger.Error("Failed to create key generation session", err, "walletID", walletID)
 			return
 		}
-		eddsaSession, err := ec.node.CreateEDDSAKeyGenSession(walletID, threshold, ec.genKeySucecssQueue)
+		eddsaSession, err := ec.node.CreateEDDSAKeyGenSession(walletID, ec.mpcThreshold, ec.genKeySucecssQueue)
 		if err != nil {
 			logger.Error("Failed to create key generation session", err, "walletID", walletID)
 			return
@@ -194,7 +195,6 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			"Id",
 			ec.node.ID(),
 		)
-		threshold := 1
 
 		// Check for duplicate session and track if new
 		if ec.checkDuplicateSession(msg.WalletID, msg.TxID) {
@@ -209,7 +209,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				msg.WalletID,
 				msg.TxID,
 				msg.NetworkInternalCode,
-				threshold,
+				ec.mpcThreshold,
 				ec.signingResultQueue,
 			)
 		case KeyTypeEd25519:
@@ -217,7 +217,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				msg.WalletID,
 				msg.TxID,
 				msg.NetworkInternalCode,
-				threshold,
+				ec.mpcThreshold,
 				ec.signingResultQueue,
 			)
 

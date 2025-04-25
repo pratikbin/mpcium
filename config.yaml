@@ -3,4 +3,5 @@ nats:
 consul:
   address: localhost:8500
 
+mpc_threshold: 2
 badger_password: 1JwFmsc9lxlLfkPl
