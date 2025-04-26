@@ -12,6 +12,7 @@ import (
 	"github.com/cryptoniumX/mpcium/pkg/constant"
 	"github.com/cryptoniumX/mpcium/pkg/event"
 	"github.com/cryptoniumX/mpcium/pkg/eventconsumer"
+	"github.com/cryptoniumX/mpcium/pkg/identity"
 	"github.com/cryptoniumX/mpcium/pkg/infra"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
@@ -48,6 +49,11 @@ func main() {
 	keyinfoStore := keyinfo.NewStore(consulClient.KV())
 	peers := LoadPeersFromConsul(consulClient)
 	nodeID := GetIDFromName(*nodeName, peers)
+
+	identityStore, err := identity.NewFileStore("identity", *nodeName)
+	if err != nil {
+		logger.Fatal("Failed to create identity store", err)
+	}
 
 	natsConn, err := GetNATSConnection(environment)
 	if err != nil {
@@ -87,6 +93,7 @@ func main() {
 		badgerKV,
 		keyinfoStore,
 		peerRegistry,
+		identityStore,
 	)
 	defer mpcNode.Close()
 

@@ -12,6 +12,7 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/common/errors"
 	"github.com/cryptoniumX/mpcium/pkg/event"
+	"github.com/cryptoniumX/mpcium/pkg/identity"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
@@ -55,6 +56,7 @@ func NewSigningSession(
 	kvstore kvstore.KVStore,
 	keyinfoStore keyinfo.Store,
 	resultQueue messaging.MessageQueue,
+	identityStore identity.Store,
 ) *SigningSession {
 	return &SigningSession{
 		Session: Session{
@@ -81,8 +83,9 @@ func NewSigningSession(
 			composeKey: func(waleltID string) string {
 				return fmt.Sprintf("ecdsa:%s", waleltID)
 			},
-			getRoundFunc: GetEcdsaMsgRound,
-			resultQueue:  resultQueue,
+			getRoundFunc:  GetEcdsaMsgRound,
+			resultQueue:   resultQueue,
+			identityStore: identityStore,
 		},
 		endCh:               make(chan *common.SignatureData),
 		txID:                txID,

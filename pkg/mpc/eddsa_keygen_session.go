@@ -6,6 +6,7 @@ import (
 
 	"github.com/bnb-chain/tss-lib/v2/eddsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/cryptoniumX/mpcium/pkg/identity"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
@@ -34,6 +35,7 @@ func NewEDDSAKeygenSession(
 	kvstore kvstore.KVStore,
 	keyinfoStore keyinfo.Store,
 	resultQueue messaging.MessageQueue,
+	identityStore identity.Store,
 ) *EDDSAKeygenSession {
 	return &EDDSAKeygenSession{Session: Session{
 		walletID:           walletID,
@@ -58,9 +60,10 @@ func NewEDDSAKeygenSession(
 		composeKey: func(waleltID string) string {
 			return fmt.Sprintf("eddsa:%s", waleltID)
 		},
-		getRoundFunc: GetEddsaMsgRound,
-		resultQueue:  resultQueue,
-		sessionType:  SessionTypeEddsa,
+		getRoundFunc:  GetEddsaMsgRound,
+		resultQueue:   resultQueue,
+		sessionType:   SessionTypeEddsa,
+		identityStore: identityStore,
 	},
 		endCh: make(chan *keygen.LocalPartySaveData),
 	}

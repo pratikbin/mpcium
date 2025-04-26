@@ -8,10 +8,12 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/common/errors"
+	"github.com/cryptoniumX/mpcium/pkg/identity"
 	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
 	"github.com/cryptoniumX/mpcium/pkg/kvstore"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
+	"github.com/cryptoniumX/mpcium/pkg/types"
 	"github.com/nats-io/nats.go"
 )
 
@@ -47,12 +49,13 @@ type Session struct {
 	party    tss.Party
 
 	// preParams is nil for EDDSA session
-	preParams    *keygen.LocalPreParams
-	kvstore      kvstore.KVStore
-	keyinfoStore keyinfo.Store
-	broadcastSub messaging.Subscription
-	directSub    messaging.Subscription
-	resultQueue  messaging.MessageQueue
+	preParams     *keygen.LocalPreParams
+	kvstore       kvstore.KVStore
+	keyinfoStore  keyinfo.Store
+	broadcastSub  messaging.Subscription
+	directSub     messaging.Subscription
+	resultQueue   messaging.MessageQueue
+	identityStore identity.Store
 
 	topicComposer *TopicComposer
 	composeKey    KeyComposerFn
@@ -82,11 +85,19 @@ func (s *Session) handleTssMessage(keyshare tss.Message) {
 		return
 	}
 
-	msg, err := MarshalTssMessage(s.walletID, data, routing.IsBroadcast, routing.From, routing.To)
+	tssMsg := types.NewTssMessage(s.walletID, data, routing.IsBroadcast, routing.From, routing.To)
+	signature, err := s.identityStore.SignMessage(&tssMsg)
+	if err != nil {
+		s.ErrCh <- fmt.Errorf("failed to sign message: %w", err)
+		return
+	}
+	tssMsg.Signature = signature
+	msg, err := types.MarshalTssMessage(&tssMsg)
 	if err != nil {
 		s.ErrCh <- fmt.Errorf("failed to marshal tss message: %w", err)
 		return
 	}
+
 	if routing.IsBroadcast && len(routing.To) == 0 {
 		err := s.pubSub.Publish(s.topicComposer.ComposeBroadcastTopic(), msg)
 		if err != nil {
@@ -108,9 +119,14 @@ func (s *Session) handleTssMessage(keyshare tss.Message) {
 }
 
 func (s *Session) receiveTssMessage(rawMsg []byte) {
-	msg, err := UnmarshalTssMessage(rawMsg)
+	msg, err := types.UnmarshalTssMessage(rawMsg)
 	if err != nil {
 		s.ErrCh <- fmt.Errorf("Failed to unmarshal message: %w", err)
+		return
+	}
+	err = s.identityStore.VerifyMessage(msg)
+	if err != nil {
+		s.ErrCh <- fmt.Errorf("Failed to verify message: %w, tampered message", err)
 		return
 	}
 
