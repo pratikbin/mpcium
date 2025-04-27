@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 
@@ -28,10 +30,31 @@ const (
 	ENVIRONMENT = "ENVIRONMENT"
 )
 
+func DecryptGPGFile(path string) ([]byte, error) {
+	cmd := exec.Command("gpg", "--decrypt", path)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt GPG file: %w", err)
+	}
+	return out, nil
+}
+
 func main() {
 	environment := os.Getenv(ENVIRONMENT)
 	config.InitViperConfig(environment)
 	logger.Init(environment)
+
+	if environment == constant.EnvProduction {
+		quax, err := DecryptGPGFile("./quax.yaml.gpg")
+		if err != nil {
+			logger.Fatal("Failed to decrypt GPG file", err)
+		}
+
+		viper.SetConfigType("yaml")
+		if err := viper.MergeConfig(bytes.NewBuffer(quax)); err != nil {
+			logger.Fatal("failed to merge secret config: %w", err)
+		}
+	}
 
 	nodeName := flag.String("name", "", "Provide node name")
 	flag.Parse()
@@ -39,8 +62,15 @@ func main() {
 		logger.Fatal("Node name is required", nil)
 	}
 
-	appConfig := config.LoadConfig()
-	logger.Info("App config", "config", appConfig.MarshalJSONMask())
+	// err := LoadConfigFromEncryptedFile("./config.yaml")
+	// if err != nil {
+	// 	logger.Fatal("Failed to load encrypted config", err)
+	// }
+
+	// 	logger.Info("Loaded config from encrypted file successfully")
+
+	// 	appConfig := config.LoadConfig()
+	// 	logger.Info("App config", "config", appConfig.MarshalJSONMask())
 
 	consulClient := infra.GetConsulClient(environment)
 	badgerKV := NewBadgerKV(*nodeName)
