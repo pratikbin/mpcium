@@ -49,11 +49,17 @@ func main() {
 		if err != nil {
 			logger.Fatal("Failed to decrypt GPG file", err)
 		}
-
 		viper.SetConfigType("yaml")
 		if err := viper.MergeConfig(bytes.NewBuffer(quax)); err != nil {
 			logger.Fatal("failed to merge secret config: %w", err)
 		}
+	} else {
+		viper.SetConfigFile("./quax.yaml")
+		if err := viper.MergeInConfig(); err != nil {
+			logger.Fatal("Failed to merge quax.yaml", err)
+		}
+		logger.Info("Merge quax.yaml successfully")
+
 	}
 
 	nodeName := flag.String("name", "", "Provide node name")
@@ -132,6 +138,7 @@ func main() {
 		pubsub,
 		genKeySuccessQueue,
 		singingResultQueue,
+		identityStore,
 	)
 	eventConsumer.Run()
 	defer eventConsumer.Close()

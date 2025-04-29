@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/cryptoniumX/mpcium/pkg/event"
+	"github.com/cryptoniumX/mpcium/pkg/identity"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/messaging"
 	"github.com/cryptoniumX/mpcium/pkg/mpc"
+	"github.com/cryptoniumX/mpcium/pkg/types"
 	"github.com/nats-io/nats.go"
 	"github.com/spf13/viper"
 )
@@ -38,6 +40,7 @@ type eventConsumer struct {
 
 	keyGenerationSub messaging.Subscription
 	signingSub       messaging.Subscription
+	identityStore    identity.Store
 
 	// Track active sessions with timestamps for cleanup
 	activeSessions  map[string]time.Time // Maps "walletID-txID" to creation time
@@ -52,6 +55,7 @@ func NewEventConsumer(
 	pubsub messaging.PubSub,
 	genKeySucecssQueue messaging.MessageQueue,
 	signingResultQueue messaging.MessageQueue,
+	identityStore identity.Store,
 ) EventConsumer {
 	ec := &eventConsumer{
 		node:               node,
@@ -63,6 +67,7 @@ func NewEventConsumer(
 		sessionTimeout:     30 * time.Minute, // Consider sessions older than 30 minutes stale
 		cleanupStopChan:    make(chan struct{}),
 		mpcThreshold:       viper.GetInt("mpc_threshold"),
+		identityStore:      identityStore,
 	}
 
 	// Start background cleanup goroutine
@@ -87,8 +92,22 @@ func (ec *eventConsumer) Run() {
 
 func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(natMsg *nats.Msg) {
-		msg := natMsg.Data
-		walletID := string(msg)
+		raw := natMsg.Data
+		var msg types.GenerateKeyMessage
+		err := json.Unmarshal(raw, &msg)
+		if err != nil {
+			logger.Error("Failed to unmarshal signing message", err)
+			return
+		}
+		logger.Info("Received key generation event", "msg", msg)
+
+		err = ec.identityStore.VerifyInitiatorMessage(&msg)
+		if err != nil {
+			logger.Error("Failed to verify initiator message", err)
+			return
+		}
+
+		walletID := msg.WalletID
 		session, err := ec.node.CreateKeyGenSession(walletID, ec.mpcThreshold, ec.genKeySucecssQueue)
 		if err != nil {
 			logger.Error("Failed to create key generation session", err, "walletID", walletID)
@@ -116,7 +135,7 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 			for {
 				select {
 				case <-ctx.Done():
-					successEvent.S256PubKey = session.GetPubKeyResult()
+					successEvent.ECDSAPubKey = session.GetPubKeyResult()
 					wg.Done()
 					return
 				case err := <-session.ErrCh:
@@ -177,10 +196,16 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 func (ec *eventConsumer) consumeTxSigningEvent() error {
 	sub, err := ec.pubsub.Subscribe(MPCSignEvent, func(natMsg *nats.Msg) {
 		raw := natMsg.Data
-		var msg SignTxMessage
+		var msg types.SignTxMessage
 		err := json.Unmarshal(raw, &msg)
 		if err != nil {
 			logger.Error("Failed to unmarshal signing message", err)
+			return
+		}
+
+		err = ec.identityStore.VerifyInitiatorMessage(&msg)
+		if err != nil {
+			logger.Error("Failed to verify initiator message", err)
 			return
 		}
 
@@ -204,7 +229,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		var session mpc.ISigningSession
 		switch msg.KeyType {
-		case KeyTypeSecp256k1:
+		case types.KeyTypeSecp256k1:
 			session, err = ec.node.CreateSigningSession(
 				msg.WalletID,
 				msg.TxID,
@@ -212,7 +237,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				ec.mpcThreshold,
 				ec.signingResultQueue,
 			)
-		case KeyTypeEd25519:
+		case types.KeyTypeEd25519:
 			session, err = ec.node.CreateEDDSASigningSession(
 				msg.WalletID,
 				msg.TxID,

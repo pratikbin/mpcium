@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/types"
+	"github.com/spf13/viper"
 )
 
 // NodeIdentity represents a node's identity information
@@ -26,7 +27,7 @@ type NodeIdentity struct {
 type Store interface {
 	// GetPublicKey retrieves a node's public key by its ID
 	GetPublicKey(nodeID string) ([]byte, error)
-
+	VerifyInitiatorMessage(msg types.InitiatorMessage) error
 	SignMessage(msg *types.TssMessage) ([]byte, error)
 	VerifyMessage(msg *types.TssMessage) error
 }
@@ -41,7 +42,8 @@ type fileStore struct {
 	mu         sync.RWMutex
 
 	// Cached private key
-	privateKey []byte
+	privateKey      []byte
+	initiatorPubKey []byte
 }
 
 // NewFileStore creates a new identity store
@@ -50,16 +52,39 @@ func NewFileStore(identityDir, nodeName string) (*fileStore, error) {
 		return nil, fmt.Errorf("failed to create identity directory: %w", err)
 	}
 
-	// Load private key immediately
+	// Load private key from file
 	privateKeyPath := filepath.Join(identityDir, fmt.Sprintf("%s_private.key", nodeName))
 	privateKeyData, err := os.ReadFile(privateKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read private key file: %w", err)
 	}
 
-	privateKey, err := hex.DecodeString(string(privateKeyData))
+	privateKeyHex := string(privateKeyData)
+	privateKey, err := hex.DecodeString(privateKeyHex)
 	if err != nil {
 		return nil, fmt.Errorf("invalid private key format: %w", err)
+	}
+
+	pubKeyHex := viper.GetString("event_initiator_pubkey")
+	if pubKeyHex == "" {
+		return nil, fmt.Errorf("event_initiator_pubkey not found in quax config")
+	}
+	initiatorPubKey, err := hex.DecodeString(pubKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid initiator public key format: %w", err)
+	}
+
+	logger.Infof("Loaded initiator public key for node %s", pubKeyHex)
+
+	// Load peers.json to validate all nodes have identity files
+	peersData, err := os.ReadFile("peers.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read peers.json: %w", err)
+	}
+
+	peers := make(map[string]string)
+	if err := json.Unmarshal(peersData, &peers); err != nil {
+		return nil, fmt.Errorf("failed to parse peers.json: %w", err)
 	}
 
 	store := &fileStore{
@@ -67,34 +92,34 @@ func NewFileStore(identityDir, nodeName string) (*fileStore, error) {
 		currentNodeName: nodeName,
 		publicKeys:      make(map[string][]byte),
 		privateKey:      privateKey,
+		initiatorPubKey: initiatorPubKey,
 	}
 
-	// Load all identity files
-	files, err := os.ReadDir(identityDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read identity directory: %w", err)
-	}
-
-	for _, file := range files {
-		if !file.IsDir() && strings.HasSuffix(file.Name(), "_identity.json") {
-			path := filepath.Join(identityDir, file.Name())
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read identity file %s: %w", file.Name(), err)
-			}
-
-			var identity NodeIdentity
-			if err := json.Unmarshal(data, &identity); err != nil {
-				return nil, fmt.Errorf("failed to parse identity file %s: %w", file.Name(), err)
-			}
-
-			key, err := hex.DecodeString(identity.PublicKey)
-			if err != nil {
-				return nil, fmt.Errorf("invalid public key format in %s: %w", file.Name(), err)
-			}
-
-			store.publicKeys[identity.NodeID] = key
+	// Check that each node in peers.json has an identity file
+	for nodeName, nodeID := range peers {
+		identityFilePath := filepath.Join(identityDir, fmt.Sprintf("%s_identity.json", nodeName))
+		data, err := os.ReadFile(identityFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("missing identity file for node %s (%s): %w", nodeName, nodeID, err)
 		}
+
+		var identity NodeIdentity
+		if err := json.Unmarshal(data, &identity); err != nil {
+			return nil, fmt.Errorf("failed to parse identity file for node %s: %w", nodeName, err)
+		}
+
+		// Verify that the nodeID in peers.json matches the one in the identity file
+		if identity.NodeID != nodeID {
+			return nil, fmt.Errorf("node ID mismatch for %s: %s in peers.json vs %s in identity file",
+				nodeName, nodeID, identity.NodeID)
+		}
+
+		key, err := hex.DecodeString(identity.PublicKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid public key format for node %s: %w", nodeName, err)
+		}
+
+		store.publicKeys[identity.NodeID] = key
 	}
 
 	return store, nil
@@ -147,6 +172,28 @@ func (s *fileStore) VerifyMessage(msg *types.TssMessage) error {
 	// Verify the signature
 	if !ed25519.Verify(publicKey, msgBytes, msg.Signature) {
 		return fmt.Errorf("invalid signature")
+	}
+
+	return nil
+}
+
+// VerifyInitiatorMessage verifies that a message was signed by the known initiator
+func (s *fileStore) VerifyInitiatorMessage(msg types.InitiatorMessage) error {
+	// Get the raw message that was signed
+	msgBytes, err := msg.Raw()
+	if err != nil {
+		return fmt.Errorf("failed to get raw message data: %w", err)
+	}
+
+	// Get the signature
+	signature := msg.Sig()
+	if signature == nil || len(signature) == 0 {
+		return fmt.Errorf("message has no signature")
+	}
+
+	// Verify the signature using the initiator's public key
+	if !ed25519.Verify(s.initiatorPubKey, msgBytes, signature) {
+		return fmt.Errorf("invalid signature from initiator")
 	}
 
 	return nil

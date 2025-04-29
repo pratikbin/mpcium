@@ -26,7 +26,7 @@ type KeygenSession struct {
 
 type KeygenSuccessEvent struct {
 	WalletID    string `json:"wallet_id"`
-	S256PubKey  []byte `json:"s256_pub_key"`
+	ECDSAPubKey []byte `json:"ecdsa_pub_key"`
 	EDDSAPubKey []byte `json:"eddsa_pub_key"`
 }
 
