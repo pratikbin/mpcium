@@ -5,7 +5,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/cryptoniumX/mpcium/pkg/constant"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/viper"
@@ -46,14 +45,10 @@ type NATsConfig struct {
 	Password string `mapstructure:"password"`
 }
 
-func InitViperConfig(environment string) {
-	if environment == constant.EnvProduction {
-		viper.SetConfigName("config.prod")
-	} else {
-		viper.SetConfigName("config") // name of config file (without extension)
-	}
-	viper.SetConfigType("yaml") // REQUIRED if the config file does not have the extension in the name
-	viper.AddConfigPath(".")    // optionally look for config in the working directory
+func InitViperConfig() {
+	viper.SetConfigName("config") // name of config file (without extension)
+	viper.SetConfigType("yaml")   // REQUIRED if the config file does not have the extension in the name
+	viper.AddConfigPath(".")      // optionally look for config in the working directory
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 	err := viper.ReadInConfig() // Find and read the config file

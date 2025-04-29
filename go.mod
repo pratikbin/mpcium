@@ -18,7 +18,9 @@ require (
 	github.com/samber/lo v1.39.0
 	github.com/spf13/viper v1.18.0
 	github.com/stretchr/testify v1.10.0
+	github.com/urfave/cli/v3 v3.3.2
 	go.uber.org/mock v0.3.0
+	golang.org/x/term v0.31.0
 )
 
 require (

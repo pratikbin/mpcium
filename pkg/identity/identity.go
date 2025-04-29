@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 
@@ -47,19 +48,16 @@ type fileStore struct {
 }
 
 // NewFileStore creates a new identity store
-func NewFileStore(identityDir, nodeName string) (*fileStore, error) {
+func NewFileStore(identityDir, nodeName string, decrypt bool) (*fileStore, error) {
 	if err := os.MkdirAll(identityDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create identity directory: %w", err)
 	}
 
-	// Load private key from file
-	privateKeyPath := filepath.Join(identityDir, fmt.Sprintf("%s_private.key", nodeName))
-	privateKeyData, err := os.ReadFile(privateKeyPath)
+	privateKeyHex, err := loadPrivateKey(identityDir, nodeName, decrypt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read private key file: %w", err)
+		return nil, err
 	}
 
-	privateKeyHex := string(privateKeyData)
 	privateKey, err := hex.DecodeString(privateKeyHex)
 	if err != nil {
 		return nil, fmt.Errorf("invalid private key format: %w", err)
@@ -123,6 +121,75 @@ func NewFileStore(identityDir, nodeName string) (*fileStore, error) {
 	}
 
 	return store, nil
+}
+
+// loadPrivateKey loads the private key from file, decrypting if necessary
+func loadPrivateKey(identityDir, nodeName string, decrypt bool) (string, error) {
+	// Check for encrypted or unencrypted private key
+	encryptedKeyPath := filepath.Join(identityDir, fmt.Sprintf("%s_private.key.gpg", nodeName))
+	unencryptedKeyPath := filepath.Join(identityDir, fmt.Sprintf("%s_private.key", nodeName))
+
+	if decrypt {
+		// Use the encrypted GPG file
+		if _, err := os.Stat(encryptedKeyPath); err != nil {
+			return "", fmt.Errorf("no encrypted private key found for node %s", nodeName)
+		}
+
+		logger.Infof("Using GPG-encrypted private key for %s", nodeName)
+
+		// Create a temporary file to store the decrypted key
+		tempFile, err := os.CreateTemp("", "decrypted-key-*")
+		if err != nil {
+			return "", fmt.Errorf("failed to create temporary file: %w", err)
+		}
+		tempPath := tempFile.Name()
+		tempFile.Close() // Close the file but keep the path
+
+		// Remove the temporary file first to avoid the overwrite prompt
+		os.Remove(tempPath)
+
+		// Make sure we clean up the temp file when done
+		defer os.Remove(tempPath)
+
+		// Run GPG to decrypt the file - this will prompt for password if needed
+		cmd := exec.Command("gpg",
+			"--quiet",
+			"--decrypt",
+			"--yes",                  // Force yes to overwrite prompts
+			"--pinentry-mode", "ask", // Force asking password
+			"--output", tempPath,
+			encryptedKeyPath,
+		)
+		// Connect to terminal for password prompt
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		logger.Info("Decrypting private key (you may be prompted for password)...")
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("failed to decrypt private key: %w", err)
+		}
+
+		// Read the decrypted key
+		decryptedData, err := os.ReadFile(tempPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read decrypted key: %w", err)
+		}
+
+		return string(decryptedData), nil
+	} else {
+		// Use the unencrypted private key file
+		if _, err := os.Stat(unencryptedKeyPath); err != nil {
+			return "", fmt.Errorf("no unencrypted private key found for node %s", nodeName)
+		}
+
+		logger.Infof("Using unencrypted private key for %s", nodeName)
+		privateKeyData, err := os.ReadFile(unencryptedKeyPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read private key file: %w", err)
+		}
+		return string(privateKeyData), nil
+	}
 }
 
 // GetPublicKey retrieves a node's public key by its ID
