@@ -1,6 +1,6 @@
 <div class="title-block" style="text-align: center;" align="center">
 
-# Mpcium - Threshold Signature Scheme nodes to generate secure crypto wallets
+# mpcium — Highly Resilient Threshold Signature Scheme Nodes
 
 <p><img title="fystack logo" src="https://avatars.githubusercontent.com/u/149689344?s=400&u=13bed818667eefccd78ca4b4207d088eeb4f6110&v=4" width="320" height="320"></p>
 
@@ -11,7 +11,13 @@
 [![Telegram](https://img.shields.io/badge/Telegram-Community%20-26A5E4?logo=telegram&style=for-the-badge)](https://t.me/+IsRhPyWuOFxmNmM9)
 [![Made by Fystack](https://img.shields.io/badge/Made%20by-Fystack-7D3DF4?style=for-the-badge)](https://fystack.io)
 
-This project employs multiple MPC nodes (Multi-Party Computation) to implement a secure and distributed threshold signature scheme. It aims to generate cryptographic signatures by distributing the private key among several nodes, requiring collaboration from a threshold number of nodes to produce a signature.
+</div>
+
+## Introduction
+
+mpcium is a high-performance Go framework for implementing secure, distributed threshold signature schemes using Multi-Party Computation (MPC). It is designed to power modern crypto wallets, custody platforms, and secure key management systems by splitting the private key across multiple independent nodes.
+
+Rather than storing a full private key on any single device, mpcium ensures that cryptographic operations—such as signing transactions—require cooperation from a threshold number of MPC nodes, providing a robust defense against key compromise and single points of failure
 
 ## Motivation
 
