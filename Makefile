@@ -1,36 +1,26 @@
-WINDOW_NAME := $(shell tmux list-windows -F "#{window_name}" | grep -w "^mpcium$$")
+BIN_DIR := bin
+BINS    := mpcium mpcium-cli
 
+.PHONY: all build clean
 
-generate-id:
-	go run cmd/generate-id/main.go
-genmock:
-	mockgen -source=./pkg/messaging/point2point.go -destination=artifacts/mocks/point2point.go -package=mock
+# Default target
+all: build
 
-run:
-	go run cmd/main.go
+# Build both binaries
+build: $(BIN_DIR) $(BINS:%=$(BIN_DIR)/%)
 
-build:
-	go build -o tmp/main cmd/main.go
+# Ensure bin directory exists
+$(BIN_DIR):
+	mkdir -p $@
 
-node0: 
-	pm2 start ./tmp/main --name=mpcium0 -- --name=node0
-node1:
-	pm2 start ./tmp/main --name=mpcium1 -- --name=node1
-node2:
-	pm2 start ./tmp/main --name=mpcium2 -- --name=node2
+# Build mpcium
+$(BIN_DIR)/mpcium: | $(BIN_DIR)
+	go build -o $@ ./cmd/mpcium
 
-node0-prod: 
-	pm2 start ./tmp/main --name=mpcium0-prod -- --name=node0
-node1-prod:
-	pm2 start ./tmp/main --name=mpcium1-prod -- --name=node1
-node2-prod:
-	pm2 start ./tmp/main --name=mpcium2-prod -- --name=node2
+# Build mpcium-cli
+$(BIN_DIR)/mpcium-cli: | $(BIN_DIR)
+	go build -o $@ ./cmd/mpcium-cli
+
+# Wipe out built binaries
 clean:
-
-ifeq ($(WINDOW_NAME),mpcium)
-	tmux kill-window -t mpcium;
-endif
-
-new:
-	make clean && tmuxifier load-window mpcium
-
+	rm -rf $(BIN_DIR)
