@@ -18,7 +18,7 @@ import (
 func main() {
 	const environment = "development"
 	config.InitViperConfig()
-	logger.Init(environment)
+	logger.Init(environment, false)
 
 	natsURL := viper.GetString("nats.url")
 	natsConn, err := nats.Connect(natsURL)
@@ -40,7 +40,7 @@ func main() {
 	if err := mpcClient.CreateWallet(walletID); err != nil {
 		logger.Fatal("CreateWallet failed", err)
 	}
-	fmt.Printf("CreateWallet(%q) sent, awaiting result...\n", walletID)
+	logger.Info("CreateWallet sent, awaiting result...", "walletID", walletID)
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop

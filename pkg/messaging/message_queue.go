@@ -134,7 +134,7 @@ func (mq *msgQueue) Dequeue(topic string, handler func(message []byte) error) er
 			return
 		}
 
-		logger.Info("Message Acknowledged", "meta", meta)
+		logger.Debug("Message Acknowledged", "meta", meta)
 		err = msg.Ack()
 		if err != nil {
 			logger.Error("Error acknowledging message: ", err)
