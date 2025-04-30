@@ -47,21 +47,51 @@ By distributing the private key among multiple nodes and requiring collaboration
 - Threshold Signature Generation: The project allows multiple MPC nodes to collectively generate a threshold signature.
 - Threshold Signing: Each transaction require a threshold number of shares to be combined to generate a final signature
 
-## Get started
+## Preview usage
 
-### Development
+### Start nodes
 
 ```shell
-$ go run cmd/generate-id/main.go
+$ mpcium start -n node0
+$ mpcium start -n node1
+$ mpcium start -n node2
+
 ```
 
-Start 3 nodes
+### Client
 
-```shell
-$ go run cmd/main.go --name=mpcium0
-$ go run cmd/main.go --name=mpcium1
-$ go run cmd/main.go --name=mpcium2
+```go
 
+import (
+    "github.com/fystack/mpcium/client"
+    "github.com/nats-io/nats.go"
+)
+
+
+func main () {
+	natsConn, err := nats.Connect(natsURL)
+	if err != nil {
+		logger.Fatal("Failed to connect to NATS", err)
+	}
+	defer natsConn.Drain() // drain inflight msgs
+	defer natsConn.Close()
+	mpcClient := client.NewMPCClient(client.Options{
+		NatsConn: natsConn,
+		KeyPath:  "./event_initiator.key",
+	})
+	err = mpcClient.OnWalletCreationResult(func(event mpc.KeygenSuccessEvent) {
+		logger.Info("Received wallet creation result", "event", event)
+	})
+	if err != nil {
+		logger.Fatal("Failed to subscribe to wallet-creation results", err)
+	}
+
+	walletID := uuid.New().String()
+	if err := mpcClient.CreateWallet(walletID); err != nil {
+		logger.Fatal("CreateWallet failed", err)
+	}
+	logger.Info("CreateWallet sent, awaiting result...", "walletID", walletID)
+}
 ```
 
 ### Diagaram
