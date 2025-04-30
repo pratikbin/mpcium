@@ -1,4 +1,15 @@
-# Mpcium - Threshold Signature Scheme nodes by Fystack
+<div class="title-block" style="text-align: center;" align="center">
+
+# Mpcium - Threshold Signature Scheme nodes to generate secure crypto wallets
+
+<p><img title="fystack logo" src="https://avatars.githubusercontent.com/u/149689344?s=400&u=13bed818667eefccd78ca4b4207d088eeb4f6110&v=4" width="320" height="320"></p>
+
+[![Go Version](https://img.shields.io/badge/Go-v1.21+-00ADD8?logo=go&style=for-the-badge)](https://go.dev/)
+[![License](https://img.shields.io/github/license/fystack/mpcium?style=for-the-badge)](./LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/fystack/mpcium?style=for-the-badge)](https://goreportcard.com/report/github.com/fystack/mpcium)
+[![Version](https://img.shields.io/github/v/release/fystack/mpcium?label=version&logo=semantic-release&style=for-the-badge)](https://github.com/fystack/mpcium/releases)
+[![Telegram](https://img.shields.io/badge/Telegram-Community%20-26A5E4?logo=telegram&style=for-the-badge)](https://t.me/+IsRhPyWuOFxmNmM9)
+[![Made by Fystack](https://img.shields.io/badge/Made%20by-Fystack-7D3DF4?style=for-the-badge)](https://fystack.io)
 
 This project employs multiple MPC nodes (Multi-Party Computation) to implement a secure and distributed threshold signature scheme. It aims to generate cryptographic signatures by distributing the private key among several nodes, requiring collaboration from a threshold number of nodes to produce a signature.
 
