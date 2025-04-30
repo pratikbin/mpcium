@@ -2,7 +2,6 @@ package messaging
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 	"unicode"
@@ -47,7 +46,7 @@ func NewNATSPubSub(natsConn *nats.Conn) PubSub {
 }
 
 func (n *natsPubSub) Publish(topic string, message []byte) error {
-	fmt.Println("Publishing message to topic:", topic)
+	logger.Debug("[NATS] Publishing message", "topic", topic)
 	return n.natsConn.Publish(topic, message)
 }
 

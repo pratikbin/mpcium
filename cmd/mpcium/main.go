@@ -27,17 +27,19 @@ import (
 )
 
 const (
-	ENVIRONMENT = "ENVIRONMENT"
+	// Version information
+	VERSION = "0.2.1"
 )
 
 func main() {
 	app := &cli.Command{
-		Name:  "mpcium",
-		Usage: "Multi-Party Computation node for threshold signatures",
+		Name:    "mpcium",
+		Usage:   "Multi-Party Computation node for threshold signatures",
+		Version: VERSION,
 		Commands: []*cli.Command{
 			{
 				Name:  "start",
-				Usage: "Start an MPCium node",
+				Usage: "Start an MPCIUM node",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:     "name",
@@ -56,8 +58,21 @@ func main() {
 						Aliases: []string{"p"},
 						Usage:   "Prompt for sensitive parameters",
 					},
+					&cli.BoolFlag{
+						Name:  "debug",
+						Usage: "Enable debug logging",
+						Value: false,
+					},
 				},
 				Action: runNode,
+			},
+			{
+				Name:  "version",
+				Usage: "Display detailed version information",
+				Action: func(ctx context.Context, c *cli.Command) error {
+					fmt.Printf("mpcium version %s\n", VERSION)
+					return nil
+				},
 			},
 		},
 	}
@@ -72,10 +87,11 @@ func runNode(ctx context.Context, c *cli.Command) error {
 	nodeName := c.String("name")
 	decryptPrivateKey := c.Bool("decrypt-private-key")
 	usePrompts := c.Bool("prompt-credentials")
+	debug := c.Bool("debug")
 
 	config.InitViperConfig()
 	environment := viper.GetString("environment")
-	logger.Init(environment)
+	logger.Init(environment, debug)
 
 	// Handle configuration based on prompt flag
 	if usePrompts {
@@ -281,7 +297,7 @@ func NewConsulClient(addr string) *api.Client {
 
 func LoadPeersFromConsul(consulClient *api.Client) []config.Peer { // Create a Consul Key-Value store client
 	kv := consulClient.KV()
-	peers, err := config.LoadPeersFromConsul(kv, "mpc-peers/")
+	peers, err := config.LoadPeersFromConsul(kv, "mpc_peers/")
 	if err != nil {
 		logger.Fatal("Failed to load peers from Consul", err)
 	}

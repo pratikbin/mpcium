@@ -49,7 +49,7 @@ func NewNATsMessageQueueManager(queueName string, subjectWildCards []string, nc 
 	}
 	if stream != nil {
 		info, _ := stream.Info(ctx)
-		logger.Info("Stream found", "info", info)
+		logger.Debug("Stream found", "info", info)
 
 	}
 
@@ -120,7 +120,7 @@ func (mq *msgQueue) Enqueue(topic string, message []byte, options *EnqueueOption
 func (mq *msgQueue) Dequeue(topic string, handler func(message []byte) error) error {
 	c, err := mq.consumer.Consume(func(msg jetstream.Msg) {
 		meta, _ := msg.Metadata()
-		logger.Info("Received message", "meta", meta)
+		logger.Debug("Received message", "meta", meta)
 		err := handler(msg.Data())
 		if err != nil {
 			if errors.Is(err, ErrPermament) {

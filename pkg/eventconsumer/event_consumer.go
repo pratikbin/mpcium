@@ -166,7 +166,7 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		go eddsaSession.GenerateKey(doneEddsa)
 
 		wg.Wait()
-		logger.Info("Closing section successfully!", "event", successEvent)
+		logger.Info("Closing session successfully!", "event", successEvent)
 
 		successEventBytes, err := json.Marshal(successEvent)
 		if err != nil {

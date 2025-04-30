@@ -18,7 +18,7 @@ func registerPeers(ctx context.Context, c *cli.Command) error {
 	environment := c.String("environment")
 
 	// Hardcoded prefix for MPC peers in Consul
-	prefix := "mpc_peers1/"
+	prefix := "mpc_peers/"
 
 	// Check if input file exists
 	if _, err := os.Stat(inputPath); os.IsNotExist(err) {

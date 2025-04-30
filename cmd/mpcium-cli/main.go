@@ -2,10 +2,16 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 
 	"github.com/urfave/cli/v3"
+)
+
+const (
+	// Version information
+	VERSION = "0.2.1"
 )
 
 func main() {
@@ -53,7 +59,7 @@ func main() {
 			},
 			{
 				Name:  "generate-identity",
-				Usage: "Generate identity files with optional GPG-encrypted private keys for a node",
+				Usage: "Generate identity files with optional Age-encrypted private keys for a node",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:     "node",
@@ -118,6 +124,14 @@ func main() {
 					},
 				},
 				Action: generateInitiatorIdentity,
+			},
+			{
+				Name:  "version",
+				Usage: "Display detailed version information",
+				Action: func(ctx context.Context, c *cli.Command) error {
+					fmt.Printf("mpcium-cli version %s\n", VERSION)
+					return nil
+				},
 			},
 		},
 	}

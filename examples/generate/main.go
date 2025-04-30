@@ -16,8 +16,8 @@ import (
 )
 
 func main() {
-	const environment = "dev"
-	config.InitViperConfig(environment)
+	const environment = "development"
+	config.InitViperConfig()
 	logger.Init(environment)
 
 	natsURL := viper.GetString("nats.url")

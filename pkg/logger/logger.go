@@ -9,13 +9,19 @@ import (
 
 var Log zerolog.Logger
 
-func Init(env string) {
+func Init(env string, debug bool) {
+	if debug {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	} else {
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
+
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 	if env != "production" {
-		Log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, NoColor: false, TimeFormat: "2006-01-02 15:04:05.000"}).With().Timestamp().Logger()
+		Log = zerolog.New(
+			zerolog.ConsoleWriter{Out: os.Stderr, NoColor: false, TimeFormat: "2006-01-02 15:04:05.000"},
+		).With().Timestamp().Logger()
 	} else {
-
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 		Log = zerolog.New(os.Stdout).With().Timestamp().Logger()
 	}
 }

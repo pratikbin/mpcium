@@ -1,6 +1,8 @@
 package infra
 
 import (
+	"time"
+
 	"github.com/fystack/mpcium/pkg/constant"
 	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/hashicorp/consul/api"
@@ -28,9 +30,17 @@ func GetConsulClient(environment string) *api.Client {
 	}
 
 	config.Address = viper.GetString("consul.address")
+	config.WaitTime = 10 * time.Second
+	// Ping the Consul server to verify connectivity
+
 	client, err := api.NewClient(config)
 	if err != nil {
 		logger.Fatal("Failed to create consul client", err)
+	}
+
+	_, err = client.Status().Leader()
+	if err != nil {
+		logger.Fatal("failed to connect to Consul", err)
 	}
 
 	return client
