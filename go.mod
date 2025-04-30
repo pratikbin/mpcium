@@ -1,4 +1,4 @@
-module github.com/cryptoniumX/mpcium
+module github.com/fystack/mpcium
 
 go 1.23.0
 

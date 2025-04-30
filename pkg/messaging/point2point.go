@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/avast/retry-go"
-	"github.com/cryptoniumX/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/nats-io/nats.go"
 )
 

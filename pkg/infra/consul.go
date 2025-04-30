@@ -1,8 +1,8 @@
 package infra
 
 import (
-	"github.com/cryptoniumX/mpcium/pkg/constant"
-	"github.com/cryptoniumX/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/constant"
+	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/hashicorp/consul/api"
 	"github.com/spf13/viper"
 )

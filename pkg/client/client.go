@@ -8,12 +8,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cryptoniumX/mpcium/pkg/event"
-	"github.com/cryptoniumX/mpcium/pkg/eventconsumer"
-	"github.com/cryptoniumX/mpcium/pkg/logger"
-	"github.com/cryptoniumX/mpcium/pkg/messaging"
-	"github.com/cryptoniumX/mpcium/pkg/mpc"
-	"github.com/cryptoniumX/mpcium/pkg/types"
+	"github.com/fystack/mpcium/pkg/event"
+	"github.com/fystack/mpcium/pkg/eventconsumer"
+	"github.com/fystack/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/messaging"
+	"github.com/fystack/mpcium/pkg/mpc"
+	"github.com/fystack/mpcium/pkg/types"
 	"github.com/nats-io/nats.go"
 )
 

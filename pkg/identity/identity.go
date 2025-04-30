@@ -13,8 +13,8 @@ import (
 
 	"filippo.io/age"
 	"github.com/bnb-chain/tss-lib/v2/tss"
-	"github.com/cryptoniumX/mpcium/pkg/logger"
-	"github.com/cryptoniumX/mpcium/pkg/types"
+	"github.com/fystack/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/types"
 	"github.com/spf13/viper"
 	"golang.org/x/term"
 )

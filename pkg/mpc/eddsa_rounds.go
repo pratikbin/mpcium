@@ -4,7 +4,7 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/eddsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/eddsa/signing"
 	"github.com/bnb-chain/tss-lib/v2/tss"
-	"github.com/cryptoniumX/mpcium/pkg/common/errors"
+	"github.com/fystack/mpcium/pkg/common/errors"
 )
 
 type GetRoundFunc func(msg []byte, partyID *tss.PartyID, isBroadcast bool) (RoundInfo, error)

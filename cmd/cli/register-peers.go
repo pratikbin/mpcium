@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cryptoniumX/mpcium/pkg/config"
-	"github.com/cryptoniumX/mpcium/pkg/infra"
-	"github.com/cryptoniumX/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/config"
+	"github.com/fystack/mpcium/pkg/infra"
+	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/hashicorp/consul/api"
 	"github.com/urfave/cli/v3"
 )

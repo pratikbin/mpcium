@@ -6,11 +6,11 @@ import (
 
 	"github.com/bnb-chain/tss-lib/v2/eddsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
-	"github.com/cryptoniumX/mpcium/pkg/identity"
-	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
-	"github.com/cryptoniumX/mpcium/pkg/kvstore"
-	"github.com/cryptoniumX/mpcium/pkg/logger"
-	"github.com/cryptoniumX/mpcium/pkg/messaging"
+	"github.com/fystack/mpcium/pkg/identity"
+	"github.com/fystack/mpcium/pkg/keyinfo"
+	"github.com/fystack/mpcium/pkg/kvstore"
+	"github.com/fystack/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/messaging"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
 )
 

@@ -4,7 +4,7 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
 	"github.com/bnb-chain/tss-lib/v2/tss"
-	"github.com/cryptoniumX/mpcium/pkg/common/errors"
+	"github.com/fystack/mpcium/pkg/common/errors"
 )
 
 const (

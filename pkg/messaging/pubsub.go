@@ -7,7 +7,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/cryptoniumX/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
