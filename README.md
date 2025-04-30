@@ -70,4 +70,6 @@ $ go run cmd/main.go --name=mpcium2
 
 ## Encrypt
 
-gpg --output quax.yaml.gpg --encrypt --recipient "63807133B8591D1F782B17DFDFBE205CE2069FE2" quax.yaml
+## Decrypt
+
+#age --decrypt -o event_initiator.key event_initiator.key.age

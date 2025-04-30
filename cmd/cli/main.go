@@ -77,10 +77,47 @@ func main() {
 						Name:    "encrypt",
 						Aliases: []string{"e"},
 						Value:   false,
-						Usage:   "Encrypt private key with GPG (recommended for production)",
+						Usage:   "Encrypt private key with Age (recommended for production)",
+					},
+					&cli.BoolFlag{
+						Name:    "overwrite",
+						Aliases: []string{"f"},
+						Value:   false,
+						Usage:   "Overwrite identity files if they already exist",
 					},
 				},
 				Action: generateIdentity,
+			},
+			{
+				Name:  "generate-initiator",
+				Usage: "Generate identity files for an event initiator node",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:    "node-name",
+						Aliases: []string{"n"},
+						Value:   "event_initiator",
+						Usage:   "Name for the initiator node",
+					},
+					&cli.StringFlag{
+						Name:    "output-dir",
+						Aliases: []string{"o"},
+						Value:   ".",
+						Usage:   "Output directory for identity files",
+					},
+					&cli.BoolFlag{
+						Name:    "encrypt",
+						Aliases: []string{"e"},
+						Value:   false,
+						Usage:   "Encrypt private key with Age (recommended for production)",
+					},
+					&cli.BoolFlag{
+						Name:    "overwrite",
+						Aliases: []string{"f"},
+						Value:   false,
+						Usage:   "Overwrite identity files if they already exist",
+					},
+				},
+				Action: generateInitiatorIdentity,
 			},
 		},
 	}

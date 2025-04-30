@@ -5,15 +5,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
 
+	"filippo.io/age"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/cryptoniumX/mpcium/pkg/logger"
 	"github.com/cryptoniumX/mpcium/pkg/types"
 	"github.com/spf13/viper"
+	"golang.org/x/term"
 )
 
 // NodeIdentity represents a node's identity information
@@ -126,52 +129,46 @@ func NewFileStore(identityDir, nodeName string, decrypt bool) (*fileStore, error
 // loadPrivateKey loads the private key from file, decrypting if necessary
 func loadPrivateKey(identityDir, nodeName string, decrypt bool) (string, error) {
 	// Check for encrypted or unencrypted private key
-	encryptedKeyPath := filepath.Join(identityDir, fmt.Sprintf("%s_private.key.gpg", nodeName))
+	encryptedKeyPath := filepath.Join(identityDir, fmt.Sprintf("%s_private.key.age", nodeName))
 	unencryptedKeyPath := filepath.Join(identityDir, fmt.Sprintf("%s_private.key", nodeName))
 
 	if decrypt {
-		// Use the encrypted GPG file
+		// Use the encrypted age file
 		if _, err := os.Stat(encryptedKeyPath); err != nil {
 			return "", fmt.Errorf("no encrypted private key found for node %s", nodeName)
 		}
 
-		logger.Infof("Using GPG-encrypted private key for %s", nodeName)
+		logger.Infof("Using age-encrypted private key for %s", nodeName)
 
-		// Create a temporary file to store the decrypted key
-		tempFile, err := os.CreateTemp("", "decrypted-key-*")
+		// Open the encrypted file
+		encryptedFile, err := os.Open(encryptedKeyPath)
 		if err != nil {
-			return "", fmt.Errorf("failed to create temporary file: %w", err)
+			return "", fmt.Errorf("failed to open encrypted key file: %w", err)
 		}
-		tempPath := tempFile.Name()
-		tempFile.Close() // Close the file but keep the path
+		defer encryptedFile.Close()
 
-		// Remove the temporary file first to avoid the overwrite prompt
-		os.Remove(tempPath)
+		// Prompt for passphrase using term.ReadPassword
+		fmt.Print("Enter passphrase to decrypt private key: ")
+		bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+		fmt.Println() // newline after prompt
+		if err != nil {
+			return "", fmt.Errorf("failed to read passphrase: %w", err)
+		}
+		passphrase := string(bytePassword)
+		// Create an identity with the provided passphrase
+		identity, err := age.NewScryptIdentity(passphrase)
+		if err != nil {
+			return "", fmt.Errorf("failed to create identity for decryption: %w", err)
+		}
 
-		// Make sure we clean up the temp file when done
-		defer os.Remove(tempPath)
-
-		// Run GPG to decrypt the file - this will prompt for password if needed
-		cmd := exec.Command("gpg",
-			"--quiet",
-			"--decrypt",
-			"--yes",                  // Force yes to overwrite prompts
-			"--pinentry-mode", "ask", // Force asking password
-			"--output", tempPath,
-			encryptedKeyPath,
-		)
-		// Connect to terminal for password prompt
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		logger.Info("Decrypting private key (you may be prompted for password)...")
-		if err := cmd.Run(); err != nil {
+		// Decrypt the file
+		decrypter, err := age.Decrypt(encryptedFile, identity)
+		if err != nil {
 			return "", fmt.Errorf("failed to decrypt private key: %w", err)
 		}
 
-		// Read the decrypted key
-		decryptedData, err := os.ReadFile(tempPath)
+		// Read the decrypted content
+		decryptedData, err := io.ReadAll(decrypter)
 		if err != nil {
 			return "", fmt.Errorf("failed to read decrypted key: %w", err)
 		}

@@ -42,7 +42,7 @@ func registerPeers(ctx context.Context, c *cli.Command) error {
 	}
 
 	// Initialize config and logger
-	config.InitViperConfig(environment)
+	config.InitViperConfig()
 	logger.Init(environment)
 
 	// Connect to Consul

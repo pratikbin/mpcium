@@ -5,6 +5,7 @@ go 1.23.0
 toolchain go1.23.5
 
 require (
+	filippo.io/age v1.2.1
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/bnb-chain/tss-lib/v2 v2.0.2
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2

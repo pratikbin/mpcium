@@ -12,16 +12,6 @@ import (
 	"time"
 )
 
-// Identity struct to store node metadata
-type Identity struct {
-	NodeName    string `json:"node_name"`
-	PublicKey   string `json:"public_key"`
-	CreatedAt   string `json:"created_at"`
-	CreatedBy   string `json:"created_by"`
-	MachineOS   string `json:"machine_os"`
-	MachineName string `json:"machine_name"`
-}
-
 func main() {
 	nodeName := "event_initiator" // Or load from CLI args/env var if needed
 

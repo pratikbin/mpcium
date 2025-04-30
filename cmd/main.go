@@ -56,13 +56,13 @@ func main() {
 						Required: true,
 					},
 					&cli.BoolFlag{
-						Name:    "gpg-decrypt",
-						Aliases: []string{"g"},
+						Name:    "decrypt-private-key",
+						Aliases: []string{"d"},
 						Value:   false,
-						Usage:   "Decrypt node private key using GPG",
+						Usage:   "Decrypt node private key",
 					},
 					&cli.BoolFlag{
-						Name:    "prompt-sensitive",
+						Name:    "prompt-credentials",
 						Aliases: []string{"p"},
 						Usage:   "Prompt for sensitive parameters",
 					},
@@ -80,8 +80,8 @@ func main() {
 
 func runNode(ctx context.Context, c *cli.Command) error {
 	nodeName := c.String("name")
-	gpgDecrypt := c.Bool("gpg-decrypt")
-	usePrompts := c.Bool("prompt-sensitive")
+	decryptPrivateKey := c.Bool("decrypt-private-key")
+	usePrompts := c.Bool("prompt-credentials")
 
 	environment := os.Getenv(ENVIRONMENT)
 	config.InitViperConfig()
@@ -110,7 +110,7 @@ func runNode(ctx context.Context, c *cli.Command) error {
 	peers := LoadPeersFromConsul(consulClient)
 	nodeID := GetIDFromName(nodeName, peers)
 
-	identityStore, err := identity.NewFileStore("identity", nodeName, gpgDecrypt)
+	identityStore, err := identity.NewFileStore("identity", nodeName, decryptPrivateKey)
 	if err != nil {
 		logger.Fatal("Failed to create identity store", err)
 	}
