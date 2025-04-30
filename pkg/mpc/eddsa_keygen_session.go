@@ -6,12 +6,12 @@ import (
 
 	"github.com/bnb-chain/tss-lib/v2/eddsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/decred/dcrd/dcrec/edwards/v2"
 	"github.com/fystack/mpcium/pkg/identity"
 	"github.com/fystack/mpcium/pkg/keyinfo"
 	"github.com/fystack/mpcium/pkg/kvstore"
 	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/fystack/mpcium/pkg/messaging"
-	"github.com/decred/dcrd/dcrec/edwards/v2"
 )
 
 type EDDSAKeygenSession struct {
@@ -132,65 +132,6 @@ func (s *EDDSAKeygenSession) GenerateKey(done func()) {
 			}
 			done()
 			return
-
-			// solanaAddress := base58.Encode(pubKeyBytes)
-
-			// logger.Info("solana address", "address", solanaAddress)
-
-			// bytes, err := encoding.EncodeEDDSAPubKey(&pk)
-			// if err != nil {
-			// 	s.ErrCh <- err
-			// }
-
-			// k, err := encoding.DecodeEDDSAPubKey(bytes)
-			// if err != nil {
-			// 	s.ErrCh <- err
-			// }
-
-			// x := k.X
-			// y := k.Y
-
-			// logger.Info("comparing", "x", x.Cmp(pk.X))
-			// logger.Info("comparing", "y", y.Cmp(pk.Y))
-
-			// logger.Info("solana address", "address", solanaAddress)
-
-			// pubKey := &ecdsa.PublicKey{
-			// 	Curve: publicKey.Curve(),
-			// 	X:     publicKey.X(),
-			// 	Y:     publicKey.Y(),
-			// }
-
-			// pubKeyBytes, err := encoding.EncodeS256PubKey(pubKey)
-			// if err != nil {
-			// 	logger.Error("failed to encode public key", err)
-			// 	s.ErrCh <- fmt.Errorf("failed to encode public key: %w", err)
-			// 	return
-			// }
-
-			// successEvent := KeygenSuccessEvent{
-			// 	WalletID: s.walletID,
-			// 	PubKey:   pubKeyBytes,
-			// }
-
-			// successEventBytes, err := json.Marshal(successEvent)
-			// if err != nil {
-			// 	s.ErrCh <- fmt.Errorf("failed to marshal success event: %w", err)
-			// 	return
-			// }
-
-			// err = s.successQueue.Enqueue(fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID), successEventBytes, &messaging.EnqueueOptions{
-			// 	IdempotententKey: fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID),
-			// })
-			// if err != nil {
-			// 	logger.Error("Failed to publish key generation success message", err)
-			// 	s.ErrCh <- fmt.Errorf("Failed to publish key generation success message %w", err)
-			// 	return
-			// }
-
-			// logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", s.walletID)
-			// done()
-			// return
 		}
 	}
 }

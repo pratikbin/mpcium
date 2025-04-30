@@ -140,27 +140,6 @@ func (s *KeygenSession) GenerateKey(done func()) {
 			}
 			s.pubkeyBytes = pubKeyBytes
 			done()
-			// successEvent := KeygenSuccessEvent{
-			// 	WalletID: s.walletID,
-			// 	PubKey:   pubKeyBytes,
-			// }
-
-			// successEventBytes, err := json.Marshal(successEvent)
-			// if err != nil {
-			// 	s.ErrCh <- fmt.Errorf("failed to marshal success event: %w", err)
-			// 	return
-			// }
-
-			// err = s.successQueue.Enqueue(fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID), successEventBytes, &messaging.EnqueueOptions{
-			// 	IdempotententKey: fmt.Sprintf(TypeGenerateWalletSuccess, s.walletID),
-			// })
-			// if err != nil {
-			// 	logger.Error("Failed to publish key generation success message", err)
-			// 	s.ErrCh <- fmt.Errorf("Failed to publish key generation success message %w", err)
-			// 	return
-			// }
-
-			// logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", s.walletID)
 			err = s.Close()
 			if err != nil {
 				logger.Error("Failed to close session", err)
