@@ -11,12 +11,10 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"time"
 
 	"filippo.io/age"
 	"github.com/urfave/cli/v3"
-	"golang.org/x/term"
 )
 
 // Identity struct to store node metadata
@@ -105,19 +103,10 @@ func generateInitiatorIdentity(ctx context.Context, c *cli.Command) error {
 
 	// Handle private key (with optional encryption)
 	if encrypt {
-		// Ask for passphrase
-		fmt.Print("Enter passphrase to encrypt private key: ")
-		bytePassword, err := term.ReadPassword(int(syscall.Stdin))
-		fmt.Println() // newline after prompt
+		// Use requestPassword function instead of inline password handling
+		passphrase, err := requestPassword()
 		if err != nil {
-			return fmt.Errorf("failed to read passphrase: %w", err)
-		}
-		passphrase := string(bytePassword)
-		if len(passphrase) < 12 {
-			return fmt.Errorf("passphrase too short (minimum 12 characters recommended)")
-		}
-		if !ContainsAtLeastNSpecial(passphrase, 2) {
-			return fmt.Errorf("passphrase must contain at least 2 special characters")
+			return err
 		}
 
 		// Create encrypted key file

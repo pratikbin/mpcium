@@ -73,3 +73,7 @@ $ go run cmd/main.go --name=mpcium2
 ## Decrypt
 
 #age --decrypt -o event_initiator.key event_initiator.key.age
+
+## Generate strong password
+
+< /dev/urandom tr -dc 'A-Za-z0-9!@#$^&\*()-\_=+[]{}|;:,.<>?/~' | head -c 16; echo

@@ -1,26 +1,21 @@
-BIN_DIR := bin
-BINS    := mpcium mpcium-cli
+.PHONY: all build clean mpcium mpc
 
-.PHONY: all build clean
+BIN_DIR := bin
 
 # Default target
 all: build
 
 # Build both binaries
-build: $(BIN_DIR) $(BINS:%=$(BIN_DIR)/%)
+build: mpcium mpc
 
-# Ensure bin directory exists
-$(BIN_DIR):
-	mkdir -p $@
+# Install mpcium (builds and places it in $GOBIN or $GOPATH/bin)
+mpcium:
+	go install ./cmd/mpcium
 
-# Build mpcium
-$(BIN_DIR)/mpcium: | $(BIN_DIR)
-	go build -o $@ ./cmd/mpcium
+# Install mpcium-cli
+mpc:
+	go install ./cmd/mpcium-cli
 
-# Build mpcium-cli
-$(BIN_DIR)/mpcium-cli: | $(BIN_DIR)
-	go build -o $@ ./cmd/mpcium-cli
-
-# Wipe out built binaries
+# Wipe out manually built binaries if needed (not required by go install)
 clean:
 	rm -rf $(BIN_DIR)

@@ -28,7 +28,10 @@ func main() {
 	defer natsConn.Drain() // drain inflight msgs
 	defer natsConn.Close()
 
-	mpcClient := client.NewMPCClient(natsConn)
+	mpcClient := client.NewMPCClient(client.Options{
+		NatsConn: natsConn,
+		KeyPath:  "./event_initiator.key",
+	})
 	err = mpcClient.OnWalletCreationResult(func(event mpc.KeygenSuccessEvent) {
 		logger.Info("Received wallet creation result", "event", event)
 	})

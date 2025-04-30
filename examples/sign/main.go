@@ -18,8 +18,8 @@ import (
 
 func main() {
 	const environment = "dev"
-	config.InitViperConfig(environment)
-	logger.Init(environment)
+	config.InitViperConfig()
+	logger.Init(environment, true)
 
 	natsURL := viper.GetString("nats.url")
 	natsConn, err := nats.Connect(natsURL)
@@ -29,7 +29,10 @@ func main() {
 	defer natsConn.Drain()
 	defer natsConn.Close()
 
-	mpcClient := client.NewMPCClient(natsConn)
+	mpcClient := client.NewMPCClient(client.Options{
+		NatsConn: natsConn,
+		KeyPath:  "./event_initiator.key",
+	})
 
 	// 2) Once wallet exists, immediately fire a SignTransaction
 	txID := uuid.New().String()

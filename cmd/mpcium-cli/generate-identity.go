@@ -25,6 +25,46 @@ type Identity struct {
 	CreatedAt string `djson:"created_at"`
 }
 
+// requestPassword prompts for password, confirms it, validates strength, and reminds to back it up
+func requestPassword() (string, error) {
+	// Warn user about password backup
+	fmt.Println("IMPORTANT: Please ensure you back up your password securely.")
+	fmt.Println("If lost, you won't be able to recover your private key.")
+
+	// First password entry
+	fmt.Print("Enter passphrase to encrypt private key: ")
+	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println() // newline after prompt
+	if err != nil {
+		return "", fmt.Errorf("failed to read passphrase: %w", err)
+	}
+	passphrase := string(bytePassword)
+
+	// Confirm password
+	fmt.Print("Confirm passphrase: ")
+	byteConfirmation, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println() // newline after prompt
+	if err != nil {
+		return "", fmt.Errorf("failed to read confirmation passphrase: %w", err)
+	}
+	confirmation := string(byteConfirmation)
+
+	// Check if passwords match
+	if passphrase != confirmation {
+		return "", fmt.Errorf("passphrases do not match")
+	}
+
+	// Validate password strength
+	if len(passphrase) < 12 {
+		return "", fmt.Errorf("passphrase too short (minimum 12 characters recommended)")
+	}
+	if !ContainsAtLeastNSpecial(passphrase, 1) {
+		return "", fmt.Errorf("passphrase must contain at least 2 special characters")
+	}
+
+	return passphrase, nil
+}
+
 func generateIdentity(ctx context.Context, c *cli.Command) error {
 	nodeName := c.String("node")
 	peersPath := c.String("peers")
@@ -34,20 +74,11 @@ func generateIdentity(ctx context.Context, c *cli.Command) error {
 
 	var passphrase string
 	if encryptKey {
-		fmt.Print("Enter passphrase to encrypt private key: ")
-		bytePassword, err := term.ReadPassword(int(syscall.Stdin))
-		fmt.Println() // newline after prompt
+		var err error
+		passphrase, err = requestPassword()
 		if err != nil {
-			return fmt.Errorf("failed to read passphrase: %w", err)
+			return err
 		}
-		passphrase = string(bytePassword)
-		if len(passphrase) < 12 {
-			return fmt.Errorf("passphrase too short (minimum 12 characters recommended)")
-		}
-		if !ContainsAtLeastNSpecial(passphrase, 2) {
-			return fmt.Errorf("passphrase must contain at least 2 special characters")
-		}
-
 	} else {
 		fmt.Println("WARNING: Private key will NOT be encrypted. This is not recommended for production environments.")
 		fmt.Println("Use --encrypt flag to enable encryption.")
