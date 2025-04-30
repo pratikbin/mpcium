@@ -10,11 +10,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cryptoniumX/mpcium/pkg/event"
-	"github.com/cryptoniumX/mpcium/pkg/logger"
-	"github.com/cryptoniumX/mpcium/pkg/messaging"
-	"github.com/cryptoniumX/mpcium/pkg/mpc"
+	"github.com/fystack/mpcium/pkg/event"
+	"github.com/fystack/mpcium/pkg/identity"
+	"github.com/fystack/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/messaging"
+	"github.com/fystack/mpcium/pkg/mpc"
+	"github.com/fystack/mpcium/pkg/types"
 	"github.com/nats-io/nats.go"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -28,14 +31,16 @@ type EventConsumer interface {
 }
 
 type eventConsumer struct {
-	node   *mpc.Node
-	pubsub messaging.PubSub
+	node         *mpc.Node
+	pubsub       messaging.PubSub
+	mpcThreshold int
 
 	genKeySucecssQueue messaging.MessageQueue
 	signingResultQueue messaging.MessageQueue
 
 	keyGenerationSub messaging.Subscription
 	signingSub       messaging.Subscription
+	identityStore    identity.Store
 
 	// Track active sessions with timestamps for cleanup
 	activeSessions  map[string]time.Time // Maps "walletID-txID" to creation time
@@ -50,6 +55,7 @@ func NewEventConsumer(
 	pubsub messaging.PubSub,
 	genKeySucecssQueue messaging.MessageQueue,
 	signingResultQueue messaging.MessageQueue,
+	identityStore identity.Store,
 ) EventConsumer {
 	ec := &eventConsumer{
 		node:               node,
@@ -60,6 +66,8 @@ func NewEventConsumer(
 		cleanupInterval:    5 * time.Minute,  // Run cleanup every 5 minutes
 		sessionTimeout:     30 * time.Minute, // Consider sessions older than 30 minutes stale
 		cleanupStopChan:    make(chan struct{}),
+		mpcThreshold:       viper.GetInt("mpc_threshold"),
+		identityStore:      identityStore,
 	}
 
 	// Start background cleanup goroutine
@@ -84,16 +92,28 @@ func (ec *eventConsumer) Run() {
 
 func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(natMsg *nats.Msg) {
-		msg := natMsg.Data
-		walletID := string(msg)
-		// TODO: threshold is configurable
-		threshold := 1
-		session, err := ec.node.CreateKeyGenSession(walletID, threshold, ec.genKeySucecssQueue)
+		raw := natMsg.Data
+		var msg types.GenerateKeyMessage
+		err := json.Unmarshal(raw, &msg)
+		if err != nil {
+			logger.Error("Failed to unmarshal signing message", err)
+			return
+		}
+		logger.Info("Received key generation event", "msg", msg)
+
+		err = ec.identityStore.VerifyInitiatorMessage(&msg)
+		if err != nil {
+			logger.Error("Failed to verify initiator message", err)
+			return
+		}
+
+		walletID := msg.WalletID
+		session, err := ec.node.CreateKeyGenSession(walletID, ec.mpcThreshold, ec.genKeySucecssQueue)
 		if err != nil {
 			logger.Error("Failed to create key generation session", err, "walletID", walletID)
 			return
 		}
-		eddsaSession, err := ec.node.CreateEDDSAKeyGenSession(walletID, threshold, ec.genKeySucecssQueue)
+		eddsaSession, err := ec.node.CreateEDDSAKeyGenSession(walletID, ec.mpcThreshold, ec.genKeySucecssQueue)
 		if err != nil {
 			logger.Error("Failed to create key generation session", err, "walletID", walletID)
 			return
@@ -115,7 +135,7 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 			for {
 				select {
 				case <-ctx.Done():
-					successEvent.S256PubKey = session.GetPubKeyResult()
+					successEvent.ECDSAPubKey = session.GetPubKeyResult()
 					wg.Done()
 					return
 				case err := <-session.ErrCh:
@@ -146,7 +166,7 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		go eddsaSession.GenerateKey(doneEddsa)
 
 		wg.Wait()
-		logger.Info("Closing section successfully!", "event", successEvent)
+		logger.Info("Closing session successfully!", "event", successEvent)
 
 		successEventBytes, err := json.Marshal(successEvent)
 		if err != nil {
@@ -176,10 +196,16 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 func (ec *eventConsumer) consumeTxSigningEvent() error {
 	sub, err := ec.pubsub.Subscribe(MPCSignEvent, func(natMsg *nats.Msg) {
 		raw := natMsg.Data
-		var msg SignTxMessage
+		var msg types.SignTxMessage
 		err := json.Unmarshal(raw, &msg)
 		if err != nil {
 			logger.Error("Failed to unmarshal signing message", err)
+			return
+		}
+
+		err = ec.identityStore.VerifyInitiatorMessage(&msg)
+		if err != nil {
+			logger.Error("Failed to verify initiator message", err)
 			return
 		}
 
@@ -194,7 +220,6 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			"Id",
 			ec.node.ID(),
 		)
-		threshold := 1
 
 		// Check for duplicate session and track if new
 		if ec.checkDuplicateSession(msg.WalletID, msg.TxID) {
@@ -204,20 +229,20 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		var session mpc.ISigningSession
 		switch msg.KeyType {
-		case KeyTypeSecp256k1:
+		case types.KeyTypeSecp256k1:
 			session, err = ec.node.CreateSigningSession(
 				msg.WalletID,
 				msg.TxID,
 				msg.NetworkInternalCode,
-				threshold,
+				ec.mpcThreshold,
 				ec.signingResultQueue,
 			)
-		case KeyTypeEd25519:
+		case types.KeyTypeEd25519:
 			session, err = ec.node.CreateEDDSASigningSession(
 				msg.WalletID,
 				msg.TxID,
 				msg.NetworkInternalCode,
-				threshold,
+				ec.mpcThreshold,
 				ec.signingResultQueue,
 			)
 

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/cryptoniumX/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -49,7 +49,7 @@ func NewNATsMessageQueueManager(queueName string, subjectWildCards []string, nc 
 	}
 	if stream != nil {
 		info, _ := stream.Info(ctx)
-		logger.Info("Stream found", "info", info)
+		logger.Debug("Stream found", "info", info)
 
 	}
 
@@ -120,7 +120,7 @@ func (mq *msgQueue) Enqueue(topic string, message []byte, options *EnqueueOption
 func (mq *msgQueue) Dequeue(topic string, handler func(message []byte) error) error {
 	c, err := mq.consumer.Consume(func(msg jetstream.Msg) {
 		meta, _ := msg.Metadata()
-		logger.Info("Received message", "meta", meta)
+		logger.Debug("Received message", "meta", meta)
 		err := handler(msg.Data())
 		if err != nil {
 			if errors.Is(err, ErrPermament) {
@@ -134,7 +134,7 @@ func (mq *msgQueue) Dequeue(topic string, handler func(message []byte) error) er
 			return
 		}
 
-		logger.Info("Message Acknowledged", "meta", meta)
+		logger.Debug("Message Acknowledged", "meta", meta)
 		err = msg.Ack()
 		if err != nil {
 			logger.Error("Error acknowledging message: ", err)

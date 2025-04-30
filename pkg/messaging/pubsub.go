@@ -2,12 +2,11 @@ package messaging
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 	"unicode"
 
-	"github.com/cryptoniumX/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -47,7 +46,7 @@ func NewNATSPubSub(natsConn *nats.Conn) PubSub {
 }
 
 func (n *natsPubSub) Publish(topic string, message []byte) error {
-	fmt.Println("Publishing message to topic:", topic)
+	logger.Debug("[NATS] Publishing message", "topic", topic)
 	return n.natsConn.Publish(topic, message)
 }
 
@@ -172,9 +171,10 @@ func NewJetStreamPubSub(natsConn *nats.Conn, streamName string, subjects []strin
 		logger.Warn("Stream not found, creating new stream", "stream", streamName)
 	}
 	if stream != nil {
-		info, _ := stream.Info(ctx)
-		logger.Info("Stream found", "info", info)
-
+		_, err := stream.Info(ctx)
+		if err != nil {
+			logger.Fatal("Error getting stream info: ", err)
+		}
 	}
 
 	_, err = js.CreateOrUpdateStream(context.Background(), jetstream.StreamConfig{
@@ -241,7 +241,7 @@ func (j *jetStreamPubSub) Subscribe(name string, topic string, handler func(msg 
 	}
 
 	if consumer != nil {
-		logger.Info("✅ Successfully created or updated consumer", "consumer", consumer)
+		logger.Info("Successfully created or updated consumer", "consumer", consumer)
 	}
 
 	_, err = consumer.Consume(func(msg jetstream.Msg) {
@@ -250,7 +250,7 @@ func (j *jetStreamPubSub) Subscribe(name string, topic string, handler func(msg 
 	})
 
 	if err != nil {
-		logger.Error("❌ Failed to consume message:", err)
+		logger.Error("Failed to consume message:", err)
 	}
 
 	return &jetstreamSubscription{consumer: consumer}, nil

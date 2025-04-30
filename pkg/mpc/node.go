@@ -8,10 +8,11 @@ import (
 
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
-	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
-	"github.com/cryptoniumX/mpcium/pkg/kvstore"
-	"github.com/cryptoniumX/mpcium/pkg/logger"
-	"github.com/cryptoniumX/mpcium/pkg/messaging"
+	"github.com/fystack/mpcium/pkg/identity"
+	"github.com/fystack/mpcium/pkg/keyinfo"
+	"github.com/fystack/mpcium/pkg/kvstore"
+	"github.com/fystack/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/messaging"
 	"github.com/google/uuid"
 )
 
@@ -31,6 +32,7 @@ type Node struct {
 	kvstore        kvstore.KVStore
 	keyinfoStore   keyinfo.Store
 	ecdsaPreParams *keygen.LocalPreParams
+	identityStore  identity.Store
 
 	peerRegistry PeerRegistry
 }
@@ -61,6 +63,7 @@ func NewNode(
 	kvstore kvstore.KVStore,
 	keyinfoStore keyinfo.Store,
 	peerRegistry PeerRegistry,
+	identityStore identity.Store,
 ) *Node {
 	preParams, err := keygen.GeneratePreParams(5 * time.Minute)
 	if err != nil {
@@ -79,6 +82,7 @@ func NewNode(
 		keyinfoStore:   keyinfoStore,
 		ecdsaPreParams: preParams,
 		peerRegistry:   peerRegistry,
+		identityStore:  identityStore,
 	}
 }
 
@@ -109,6 +113,7 @@ func (p *Node) CreateKeyGenSession(walletID string, threshold int, successQueue 
 		p.kvstore,
 		p.keyinfoStore,
 		successQueue,
+		p.identityStore,
 	)
 	return session, nil
 }
@@ -131,6 +136,7 @@ func (p *Node) CreateEDDSAKeyGenSession(walletID string, threshold int, successQ
 		p.kvstore,
 		p.keyinfoStore,
 		successQueue,
+		p.identityStore,
 	)
 	return session, nil
 }
@@ -158,6 +164,7 @@ func (p *Node) CreateSigningSession(
 		p.kvstore,
 		p.keyinfoStore,
 		resultQueue,
+		p.identityStore,
 	)
 	return session, nil
 }
@@ -184,6 +191,7 @@ func (p *Node) CreateEDDSASigningSession(
 		p.kvstore,
 		p.keyinfoStore,
 		resultQueue,
+		p.identityStore,
 	)
 	return session, nil
 }

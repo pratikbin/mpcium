@@ -10,12 +10,13 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
 	"github.com/bnb-chain/tss-lib/v2/tss"
-	"github.com/cryptoniumX/mpcium/pkg/common/errors"
-	"github.com/cryptoniumX/mpcium/pkg/event"
-	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
-	"github.com/cryptoniumX/mpcium/pkg/kvstore"
-	"github.com/cryptoniumX/mpcium/pkg/logger"
-	"github.com/cryptoniumX/mpcium/pkg/messaging"
+	"github.com/fystack/mpcium/pkg/common/errors"
+	"github.com/fystack/mpcium/pkg/event"
+	"github.com/fystack/mpcium/pkg/identity"
+	"github.com/fystack/mpcium/pkg/keyinfo"
+	"github.com/fystack/mpcium/pkg/kvstore"
+	"github.com/fystack/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/messaging"
 	"github.com/samber/lo"
 )
 
@@ -55,6 +56,7 @@ func NewSigningSession(
 	kvstore kvstore.KVStore,
 	keyinfoStore keyinfo.Store,
 	resultQueue messaging.MessageQueue,
+	identityStore identity.Store,
 ) *SigningSession {
 	return &SigningSession{
 		Session: Session{
@@ -81,8 +83,9 @@ func NewSigningSession(
 			composeKey: func(waleltID string) string {
 				return fmt.Sprintf("ecdsa:%s", waleltID)
 			},
-			getRoundFunc: GetEcdsaMsgRound,
-			resultQueue:  resultQueue,
+			getRoundFunc:  GetEcdsaMsgRound,
+			resultQueue:   resultQueue,
+			identityStore: identityStore,
 		},
 		endCh:               make(chan *common.SignatureData),
 		txID:                txID,

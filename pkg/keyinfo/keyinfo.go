@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/cryptoniumX/mpcium/pkg/infra"
+	"github.com/fystack/mpcium/pkg/infra"
 	"github.com/hashicorp/consul/api"
 )
 

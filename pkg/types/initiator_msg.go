@@ -1,4 +1,4 @@
-package eventconsumer
+package types
 
 import "encoding/json"
 

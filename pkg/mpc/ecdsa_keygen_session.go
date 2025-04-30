@@ -7,11 +7,12 @@ import (
 
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
-	"github.com/cryptoniumX/mpcium/pkg/encoding"
-	"github.com/cryptoniumX/mpcium/pkg/keyinfo"
-	"github.com/cryptoniumX/mpcium/pkg/kvstore"
-	"github.com/cryptoniumX/mpcium/pkg/logger"
-	"github.com/cryptoniumX/mpcium/pkg/messaging"
+	"github.com/fystack/mpcium/pkg/encoding"
+	"github.com/fystack/mpcium/pkg/identity"
+	"github.com/fystack/mpcium/pkg/keyinfo"
+	"github.com/fystack/mpcium/pkg/kvstore"
+	"github.com/fystack/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/messaging"
 )
 
 const (
@@ -25,7 +26,7 @@ type KeygenSession struct {
 
 type KeygenSuccessEvent struct {
 	WalletID    string `json:"wallet_id"`
-	S256PubKey  []byte `json:"s256_pub_key"`
+	ECDSAPubKey []byte `json:"ecdsa_pub_key"`
 	EDDSAPubKey []byte `json:"eddsa_pub_key"`
 }
 
@@ -41,6 +42,7 @@ func NewKeygenSession(
 	kvstore kvstore.KVStore,
 	keyinfoStore keyinfo.Store,
 	resultQueue messaging.MessageQueue,
+	identityStore identity.Store,
 ) *KeygenSession {
 	return &KeygenSession{
 		Session: Session{
@@ -67,9 +69,10 @@ func NewKeygenSession(
 			composeKey: func(walletID string) string {
 				return fmt.Sprintf("ecdsa:%s", walletID)
 			},
-			getRoundFunc: GetEcdsaMsgRound,
-			resultQueue:  resultQueue,
-			sessionType:  SessionTypeEcdsa,
+			getRoundFunc:  GetEcdsaMsgRound,
+			resultQueue:   resultQueue,
+			sessionType:   SessionTypeEcdsa,
+			identityStore: identityStore,
 		},
 		endCh: make(chan *keygen.LocalPartySaveData),
 	}

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cryptoniumX/mpcium/pkg/event"
-	"github.com/cryptoniumX/mpcium/pkg/logger"
-	"github.com/cryptoniumX/mpcium/pkg/messaging"
+	"github.com/fystack/mpcium/pkg/event"
+	"github.com/fystack/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/messaging"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )

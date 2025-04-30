@@ -1,0 +1,13 @@
+nats:
+  url: tls://127.0.0.1:4222 # Please use TLS for production
+  username: ""
+  password: ""
+
+consul:
+  address: https://consul.example.com # Use HTTPS for production
+  username: username
+  token: ""
+  password: ""
+
+mpc_threshold: 2
+environment: production # Set to production for production environment
