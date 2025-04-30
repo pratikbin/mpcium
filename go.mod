@@ -8,7 +8,6 @@ require (
 	filippo.io/age v1.2.1
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/bnb-chain/tss-lib/v2 v2.0.2
-	github.com/btcsuite/btcd/btcec/v2 v2.3.2
 	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.3
 	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/google/uuid v1.6.0
@@ -27,8 +26,9 @@ require (
 require (
 	github.com/agl/ed25519 v0.0.0-20200225211852-fd4d107ace12 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
-	github.com/btcsuite/btcd v0.23.4 // indirect
-	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1 // indirect
+	github.com/btcsuite/btcd v0.24.2 // indirect
+	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
+	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0 // indirect
 	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
