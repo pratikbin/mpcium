@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -30,15 +29,6 @@ import (
 const (
 	ENVIRONMENT = "ENVIRONMENT"
 )
-
-func DecryptGPGFile(path string) ([]byte, error) {
-	cmd := exec.Command("gpg", "--decrypt", path)
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt GPG file: %w", err)
-	}
-	return out, nil
-}
 
 func main() {
 	app := &cli.Command{
@@ -83,21 +73,14 @@ func runNode(ctx context.Context, c *cli.Command) error {
 	decryptPrivateKey := c.Bool("decrypt-private-key")
 	usePrompts := c.Bool("prompt-credentials")
 
-	environment := os.Getenv(ENVIRONMENT)
 	config.InitViperConfig()
+	environment := viper.GetString("environment")
 	logger.Init(environment)
 
 	// Handle configuration based on prompt flag
 	if usePrompts {
-		// Skip loading from quax.yaml and directly prompt for sensitive values
-		promptForSensitiveValues()
+		promptForSensitiveCredentials()
 	} else {
-		// Load configuration from quax.yaml
-		viper.SetConfigFile("./quax.yaml")
-		if err := viper.MergeInConfig(); err != nil {
-			logger.Fatal("Failed to merge quax.yaml", err)
-		}
-		logger.Info("Merged quax.yaml successfully")
 		// Validate the config values
 		checkRequiredConfigValues()
 	}
@@ -197,7 +180,7 @@ func runNode(ctx context.Context, c *cli.Command) error {
 }
 
 // Prompt user for sensitive configuration values
-func promptForSensitiveValues() {
+func promptForSensitiveCredentials() {
 	fmt.Println("WARNING: Please back up your Badger DB password in a secure location.")
 	fmt.Println("If you lose this password, you will permanently lose access to your data!")
 
