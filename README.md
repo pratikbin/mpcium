@@ -1,6 +1,6 @@
 <div class="title-block" style="text-align: center;" align="center">
 
-# mpcium: Highly Resilient Threshold Signature Scheme Nodes
+# mpcium: Resilient MPC (Multi-Party Computation) Nodes for Distributed Crypto Wallet Generation
 
 <p><img title="fystack logo" src="https://avatars.githubusercontent.com/u/149689344?s=400&u=13bed818667eefccd78ca4b4207d088eeb4f6110&v=4" width="320" height="320"></p>
 
@@ -22,6 +22,10 @@ At its cryptographic core, Mpcium integrates tss-lib, a production-grade thresho
 - **EdDSA (Ed25519)**: for Solana, Polkadot, Cardano, and other modern blockchains
 
 ![Mpcium Architecture](images/mpcium.png)
+
+---
+
+![All node ready](images/all-node-ready.png)
 
 ## 📦 Dependencies Overview
 
@@ -92,6 +96,10 @@ Each Mpcium node:
 - **Scalable and pluggable**: Easily expand the cluster or integrate additional tools
 - **Secure peer authentication**: All inter-node messages are signed and verified using Ed25519
 
+## Installation and Run
+
+For full installation and run instructions, see [INSTALLATION.md](./INSTALLATION.md).
+
 ## Preview usage
 
 ### Start nodes
@@ -118,7 +126,6 @@ func main () {
 	if err != nil {
 		logger.Fatal("Failed to connect to NATS", err)
 	}
-	defer natsConn.Drain() // drain inflight msgs
 	defer natsConn.Close()
 	mpcClient := client.NewMPCClient(client.Options{
 		NatsConn: natsConn,
@@ -138,11 +145,3 @@ func main () {
 	logger.Info("CreateWallet sent, awaiting result...", "walletID", walletID)
 }
 ```
-
-## Decrypt
-
-#age --decrypt -o event_initiator.key event_initiator.key.age
-
-## Generate strong password
-
-< /dev/urandom tr -dc 'A-Za-z0-9!@#$^&\*()-\_=+[]{}|;:,.<>?/~' | head -c 16; echo
