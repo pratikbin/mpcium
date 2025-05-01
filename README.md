@@ -1,6 +1,6 @@
 <div class="title-block" style="text-align: center;" align="center">
 
-# mpcium — Highly Resilient Threshold Signature Scheme Nodes
+# mpcium: Highly Resilient Threshold Signature Scheme Nodes
 
 <p><img title="fystack logo" src="https://avatars.githubusercontent.com/u/149689344?s=400&u=13bed818667eefccd78ca4b4207d088eeb4f6110&v=4" width="320" height="320"></p>
 
@@ -20,6 +20,8 @@ At its cryptographic core, Mpcium integrates tss-lib, a production-grade thresho
 - **ECDSA (secp256k1)**: Bitcoin, Ethereum, BNB, Polygon, and EVM-compatible L2 chains
 
 - **EdDSA (Ed25519)**: for Solana, Polkadot, Cardano, and other modern blockchains
+
+![Mpcium Architecture](images/mpcium.png)
 
 ## 📦 Dependencies Overview
 
@@ -58,8 +60,6 @@ This ensures:
 - Configurable security by adjusting `t` and `n`
 
 ## Architecture
-
-![Mpcium Architecture](images/mpcium.png)
 
 ### Overview
 
