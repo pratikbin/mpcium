@@ -13,56 +13,84 @@
 
 </div>
 
-## Introduction
+Mpcium is a high-performance, open-source Multi-Party Computation (MPC) engine for securely generating and managing cryptographic wallets across distributed nodes—without ever exposing the full private key.
 
-mpcium is a high-performance Go framework for implementing secure, distributed threshold signature schemes using Multi-Party Computation (MPC). It is designed to power modern crypto wallets, custody platforms, and secure key management systems by splitting the private key across multiple independent nodes.
+At its cryptographic core, Mpcium integrates tss-lib, a production-grade threshold signature scheme library developed by Binance. It supports:
 
-Rather than storing a full private key on any single device, mpcium ensures that cryptographic operations—such as signing transactions—require cooperation from a threshold number of MPC nodes, providing a robust defense against key compromise and single points of failure
+- **ECDSA (secp256k1)**: Bitcoin, Ethereum, BNB, Polygon, and EVM-compatible L2 chains
 
-## Motivation
+- **EdDSA (Ed25519)**: for Solana, Polkadot, Cardano, and other modern blockchains
 
-By distributing the private key among multiple nodes and requiring collaboration for signature generation, the project aims to enhance security, resilience, and trust in crypto currency wallet operations.
+## 📦 Dependencies Overview
 
-- **Enhanced Security**: With no single point of compromise.
-- **Reduced Trust Requirements**: Trust is distributed among multiple nodes, reducing the reliance on a single trusted party.
-- **Resilience to Node Failures**: Even if some nodes in the MPC network fail or become compromised, the threshold mechanism ensures that the system can still function as long as the specified threshold of nodes remains operational.
-- **Privacy Preservation**: The collaborative nature of threshold signature generation helps preserve the privacy of the individual nodes, as no single node possesses the complete key
+| Dependency                                          | Purpose                                                                                                                                          |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [NATS](https://nats.io)                             | Lightweight and resilient **messaging layer** for coordinating MPC nodes in real time. Enables pub/sub communication even under partial failure. |
+| [Badger KV](https://github.com/dgraph-io/badger)    | High-performance **embedded key-value store** used for local encrypted storage of MPC key shares and session data.                               |
+| [Consul](https://www.consul.io)                     | **Service discovery and health checking** to allow nodes to dynamically find each other and maintain cluster integrity.                          |
+| [tss-lib](https://github.com/binance-chain/tss-lib) | Cryptographic engine for **threshold key generation and signing**, supporting ECDSA and EdDSA (used in Bitcoin, Ethereum, Solana, etc).          |
+
+## Threshold & Nodes
+
+Mpcium uses a **t-of-n threshold scheme** to securely generate and sign with private keys.
+
+- `n` = total number of MPC nodes (key shares)
+- `t` = minimum number of nodes required to sign
+
+Only `t` out of `n` nodes need to participate — the full private key is never reconstructed.
+
+To maintain security against compromised nodes, Mpcium enforces:
+
+```
+t ≥ ⌊n / 2⌋ + 1
+```
+
+### Example: 2-of-3 Threshold
+
+- ✅ `node0 + node1` → signs successfully
+- ✅ `node1 + node2` → signs successfully
+- ❌ `node0` alone → not enough shares
+
+This ensures:
+
+- No single point of compromise
+- Fault tolerance if some nodes go offline
+- Configurable security by adjusting `t` and `n`
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                                    MPC Node                                         │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-                   │                  │                  │                  │
-                   ▼                  ▼                  ▼                  ▼
-┌─────────────┐ ┌────────────┐ ┌─────────────┐ ┌────────────────┐ ┌─────────────────┐
-│Configuration│ │ Peer       │ │ Key/Signing │ │ Event          │ │ Messaging       │
-│             │ │ Management │ │ Session     │ │ Consumers      │ │ Infrastructure  │
-└─────────────┘ └────────────┘ └─────────────┘ └────────────────┘ └─────────────────┘
-      │               │              │                │                   │
-      ▼               ▼              ▼                ▼                   ▼
-┌─────────────┐ ┌────────────┐ ┌─────────────┐ ┌────────────────┐ ┌─────────────────┐
-│Config Files │ │PeerRegistry│ │KeyGen       │ │Signing Consumer│ │NATS/JetStream   │
-│& Env Vars   │ │            │ │Signing      │ │Event Consumer  │ │Direct Messaging │
-└─────────────┘ └────────────┘ └─────────────┘ │Timeout Consumer│ │PubSub           │
-                       │              │        └────────────────┘ └─────────────────┘
-                       │              │                │                   │
-                       ▼              ▼                ▼                   ▼
-                 ┌────────────┐ ┌───────────────────────────────────────────────────┐
-                 │ Consul KV  │ │                Storage Layer                      │
-                 │            │ │                                                   │
-                 └────────────┘ │   ┌───────────┐             ┌────────────────┐    │
-                                │   │ BadgerDB  │             │ Consul KV      │    │
-                                │   │(Local KV) │             │(Distributed KV)│    │
-                                │   └───────────┘             └────────────────┘    │
-                                └───────────────────────────────────────────────────┘
-```
+![Mpcium Architecture](images/mpcium.png)
 
-## Features
+### Overview
 
-- Threshold Signature Generation: The project allows multiple MPC nodes to collectively generate a threshold signature.
-- Threshold Signing: Each transaction require a threshold number of shares to be combined to generate a final signature
+Each Mpcium node:
+
+- Holds a **key share** in local AES-256 encrypted storage (via Badger KV)
+- Participates in **threshold signing** using `tss-lib`
+- Communicates over a **resilient messaging layer** using NATS
+- Registers itself with **Consul** for service discovery and health checks
+- Verifies incoming messages using **Ed25519-based mutual authentication**
+
+### Message Flow & Signature Verification
+
+1. A signing request is broadcast to the MPC cluster through **NATS** as an authenticated event. Each node **verifies the sender’s Ed25519 signature** before processing the request.
+2. NATS broadcasts the request to the MPC nodes.
+3. Each participating node verifies:
+   - The **signature** of the sender (Ed25519)
+   - The **authenticity** of the message (non-replayable, unique session)
+4. If the node is healthy and within the quorum (`t`), it:
+   - Computes a partial signature using its share
+   - Publishes the result back via NATS
+5. Once `t` partial signatures are received, they are aggregated into a full signature.
+
+---
+
+### Properties
+
+- **No single point of compromise**: Keys are never fully assembled
+- **Byzantine-resilient**: Only `t` of `n` nodes are required to proceed
+- **Scalable and pluggable**: Easily expand the cluster or integrate additional tools
+- **Secure peer authentication**: All inter-node messages are signed and verified using Ed25519
 
 ## Preview usage
 
@@ -110,12 +138,6 @@ func main () {
 	logger.Info("CreateWallet sent, awaiting result...", "walletID", walletID)
 }
 ```
-
-### Diagaram
-
-![Diagram](images/diagram.png)
-
-## Encrypt
 
 ## Decrypt
 
