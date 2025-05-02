@@ -4,7 +4,7 @@
 
 <p><img title="fystack logo" src="https://avatars.githubusercontent.com/u/149689344?s=400&u=13bed818667eefccd78ca4b4207d088eeb4f6110&v=4" width="320" height="320"></p>
 
-[![Go Version](https://img.shields.io/badge/Go-v1.21+-00ADD8?logo=go&style=for-the-badge)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-v1.23+-00ADD8?logo=go&style=for-the-badge)](https://go.dev/)
 [![License](https://img.shields.io/github/license/fystack/mpcium?style=for-the-badge)](./LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/fystack/mpcium?style=for-the-badge)](https://goreportcard.com/report/github.com/fystack/mpcium)
 [![Version](https://img.shields.io/github/v/release/fystack/mpcium?label=version&logo=semantic-release&style=for-the-badge)](https://github.com/fystack/mpcium/releases)
@@ -35,6 +35,7 @@ At its cryptographic core, Mpcium integrates tss-lib, a production-grade thresho
 | [Badger KV](https://github.com/dgraph-io/badger)    | High-performance **embedded key-value store** used for local encrypted storage of MPC key shares and session data.                               |
 | [Consul](https://www.consul.io)                     | **Service discovery and health checking** to allow nodes to dynamically find each other and maintain cluster integrity.                          |
 | [tss-lib](https://github.com/binance-chain/tss-lib) | Cryptographic engine for **threshold key generation and signing**, supporting ECDSA and EdDSA (used in Bitcoin, Ethereum, Solana, etc).          |
+| [age](https://github.com/FiloSottile/age)           | **Modern encryption tool** used for secure key material storage and protection with password-based encryption.                                    |
 
 ## Threshold & Nodes
 
@@ -110,6 +111,11 @@ $ mpcium start -n node1
 $ mpcium start -n node2
 
 ```
+
+### Client Implementations
+
+- **Go**: Available in the `pkg/client` directory. Check the `examples` folder for usage samples.
+- **TypeScript**: Available at [github.com/fystack/mpcium-client-ts](https://github.com/fystack/mpcium-client-ts)
 
 ### Client
 
