@@ -3,6 +3,7 @@
 # mpcium: Resilient MPC (Multi-Party Computation) Nodes for Distributed Crypto Wallet Generation
 
 <p><img title="fystack logo" src="https://avatars.githubusercontent.com/u/149689344?s=400&u=13bed818667eefccd78ca4b4207d088eeb4f6110&v=4" width="320" height="320"></p>
+<p><a href="https://t.me/+IsRhPyWuOFxmNmM9">Join our Telegram community to discuss MPCIUM and Web3 cyber security!</a></p>
 
 [![Go Version](https://img.shields.io/badge/Go-v1.23+-00ADD8?logo=go&style=for-the-badge)](https://go.dev/)
 [![License](https://img.shields.io/github/license/fystack/mpcium?style=for-the-badge)](./LICENSE)
@@ -23,6 +24,10 @@ At its cryptographic core, Mpcium integrates tss-lib, a production-grade thresho
 
 ![Mpcium Architecture](images/mpcium.png)
 
+## Archtecture documentation
+
+[MPC Fundamental and MPCIUM archictecture](https://deepwiki.com/fystack/mpcium)
+
 ---
 
 ![All node ready](images/all-node-ready.png)
@@ -35,7 +40,7 @@ At its cryptographic core, Mpcium integrates tss-lib, a production-grade thresho
 | [Badger KV](https://github.com/dgraph-io/badger)    | High-performance **embedded key-value store** used for local encrypted storage of MPC key shares and session data.                               |
 | [Consul](https://www.consul.io)                     | **Service discovery and health checking** to allow nodes to dynamically find each other and maintain cluster integrity.                          |
 | [tss-lib](https://github.com/binance-chain/tss-lib) | Cryptographic engine for **threshold key generation and signing**, supporting ECDSA and EdDSA (used in Bitcoin, Ethereum, Solana, etc).          |
-| [age](https://github.com/FiloSottile/age)           | **Modern encryption tool** used for secure key material storage and protection with password-based encryption.                                    |
+| [age](https://github.com/FiloSottile/age)           | **Modern encryption tool** used for secure key material storage and protection with password-based encryption.                                   |
 
 ## Threshold & Nodes
 
@@ -78,7 +83,7 @@ Each Mpcium node:
 
 ### Message Flow & Signature Verification
 
-1. A signing request is broadcast to the MPC cluster through **NATS** as an authenticated event. Each node **verifies the sender’s Ed25519 signature** before processing the request.
+1. A signing request is broadcast to the MPC cluster through **NATS** as an authenticated event. Each node **verifies the sender's Ed25519 signature** before processing the request.
 2. NATS broadcasts the request to the MPC nodes.
 3. Each participating node verifies:
    - The **signature** of the sender (Ed25519)
