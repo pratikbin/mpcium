@@ -26,7 +26,7 @@ At its cryptographic core, Mpcium integrates tss-lib, a production-grade thresho
 
 ## Archtecture documentation
 
-[MPC Fundamental and MPCIUM archictecture](https://deepwiki.com/fystack/mpcium)
+[MPC Fundamental and MPCIUM architecture](https://deepwiki.com/fystack/mpcium)
 
 ---
 
