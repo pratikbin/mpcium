@@ -31,6 +31,7 @@ type EventConsumer interface {
 }
 
 type eventConsumer struct {
+	clusterID    string
 	node         *mpc.Node
 	pubsub       messaging.PubSub
 	mpcThreshold int
@@ -51,6 +52,7 @@ type eventConsumer struct {
 }
 
 func NewEventConsumer(
+	clusterID string,
 	node *mpc.Node,
 	pubsub messaging.PubSub,
 	genKeySucecssQueue messaging.MessageQueue,
@@ -58,6 +60,7 @@ func NewEventConsumer(
 	identityStore identity.Store,
 ) EventConsumer {
 	ec := &eventConsumer{
+		clusterID:          clusterID,
 		node:               node,
 		pubsub:             pubsub,
 		genKeySucecssQueue: genKeySucecssQueue,
@@ -90,13 +93,22 @@ func (ec *eventConsumer) Run() {
 	logger.Info("MPC Event consumer started...!")
 }
 
+func (ec *eventConsumer) composeGenerateKeyTopic() string {
+	return fmt.Sprintf("%s:%s", MPCGenerateEvent, ec.clusterID)
+}
+
+func (ec *eventConsumer) composeSignTxTopic() string {
+	return fmt.Sprintf("%s:%s", MPCSignEvent, ec.clusterID)
+}
+
 func (ec *eventConsumer) consumeKeyGenerationEvent() error {
-	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(natMsg *nats.Msg) {
+	logger.Info("ConsumerKeyGenerationEvent", "topic", ec.composeGenerateKeyTopic())
+	sub, err := ec.pubsub.Subscribe(ec.composeGenerateKeyTopic(), func(natMsg *nats.Msg) {
 		raw := natMsg.Data
 		var msg types.GenerateKeyMessage
 		err := json.Unmarshal(raw, &msg)
 		if err != nil {
-			logger.Error("Failed to unmarshal signing message", err)
+			logger.Error("Failed to unmarshal key gen message", err)
 			return
 		}
 		logger.Info("Received key generation event", "msg", msg)
@@ -194,7 +206,7 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 }
 
 func (ec *eventConsumer) consumeTxSigningEvent() error {
-	sub, err := ec.pubsub.Subscribe(MPCSignEvent, func(natMsg *nats.Msg) {
+	sub, err := ec.pubsub.Subscribe(ec.composeSignTxTopic(), func(natMsg *nats.Msg) {
 		raw := natMsg.Data
 		var msg types.SignTxMessage
 		err := json.Unmarshal(raw, &msg)

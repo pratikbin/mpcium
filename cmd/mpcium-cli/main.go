@@ -20,9 +20,9 @@ func main() {
 		Usage: "Fystack MPC node management tools",
 		Commands: []*cli.Command{
 			{
-				Name:   "generate-peers",
-				Usage:  "Generate a new peers.json file",
-				Action: generatePeers,
+				Name:   "generate-cluster",
+				Usage:  "Generate a new cluster.json file with cluster ID and peers",
+				Action: generateCluster,
 				Flags: []cli.Flag{
 					&cli.IntFlag{
 						Name:     "number",
@@ -34,26 +34,32 @@ func main() {
 						Name:    "output",
 						Aliases: []string{"o"},
 						Usage:   "Output file path",
-						Value:   peersFileName,
+						Value:   "cluster.json",
 					},
 				},
 			},
 			{
-				Name:   "register-peers",
-				Usage:  "Register peers from a JSON file to Consul",
+				Name:   "register-cluster",
+				Usage:  "Register cluster from a JSON file to Consul",
 				Action: registerPeers,
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:    "input",
 						Aliases: []string{"i"},
-						Usage:   "Input peers JSON file path (default: peers.json)",
-						Value:   peersFileName,
+						Usage:   "Input cluster JSON file path (default: cluster.json)",
+						Value:   clusterFileName,
 					},
 					&cli.StringFlag{
 						Name:    "environment",
 						Aliases: []string{"e"},
 						Usage:   "Environment (development, production, etc.)",
 						Value:   os.Getenv("ENVIRONMENT"),
+					},
+					&cli.BoolFlag{
+						Name:    "auth",
+						Aliases: []string{"a"},
+						Value:   false,
+						Usage:   "Authentication token for remote API registration",
 					},
 				},
 			},
@@ -68,10 +74,10 @@ func main() {
 						Required: true,
 					},
 					&cli.StringFlag{
-						Name:    "peers",
+						Name:    "cluster",
 						Aliases: []string{"p"},
-						Value:   peersFileName,
-						Usage:   "Path to peers.json file",
+						Value:   clusterFileName,
+						Usage:   "Path to cluster.json file",
 					},
 					&cli.StringFlag{
 						Name:    "output-dir",

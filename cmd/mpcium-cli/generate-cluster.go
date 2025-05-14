@@ -11,11 +11,13 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-const (
-	clusterFileName = "cluster.json"
-)
+// ClusterConfig structure for cluster.json
+type ClusterConfig struct {
+	ClusterID string            `json:"cluster_id"`
+	Peers     map[string]string `json:"peers"`
+}
 
-func generatePeers(ctx context.Context, c *cli.Command) error {
+func generateCluster(ctx context.Context, c *cli.Command) error {
 	numNodes := c.Int("number")
 	if numNodes < 1 {
 		return fmt.Errorf("number of nodes must be at least 1")
@@ -38,28 +40,40 @@ func generatePeers(ctx context.Context, c *cli.Command) error {
 		}
 	}
 
+	// Generate cluster ID
+	clusterID, err := uuid.NewRandom()
+	if err != nil {
+		return fmt.Errorf("failed to generate cluster UUID: %w", err)
+	}
+
 	// Generate peers data
 	peers := make(map[string]string)
 	for i := 0; i < numNodes; i++ {
 		nodeName := fmt.Sprintf("node%d", i)
 		id, err := uuid.NewRandom()
 		if err != nil {
-			return fmt.Errorf("failed to generate UUID: %w", err)
+			return fmt.Errorf("failed to generate node UUID: %w", err)
 		}
 		peers[nodeName] = id.String()
 	}
 
+	// Create cluster config
+	clusterConfig := ClusterConfig{
+		ClusterID: clusterID.String(),
+		Peers:     peers,
+	}
+
 	// Convert to JSON
-	peersJSON, err := json.MarshalIndent(peers, "", "  ")
+	clusterJSON, err := json.MarshalIndent(clusterConfig, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
 	// Write to file
-	if err := os.WriteFile(outputPath, peersJSON, 0644); err != nil {
+	if err := os.WriteFile(outputPath, clusterJSON, 0644); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
-	fmt.Printf("Successfully generated peers file at %s with %d nodes\n", outputPath, numNodes)
+	fmt.Printf("Successfully generated cluster file at %s with %d nodes\n", outputPath, numNodes)
 	return nil
 }

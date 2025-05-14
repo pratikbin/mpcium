@@ -13,6 +13,7 @@ import (
 
 	"filippo.io/age"
 	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/fystack/mpcium/pkg/config"
 	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/fystack/mpcium/pkg/types"
 	"github.com/spf13/viper"
@@ -77,17 +78,6 @@ func NewFileStore(identityDir, nodeName string, decrypt bool) (*fileStore, error
 
 	logger.Infof("Loaded initiator public key for node %s", pubKeyHex)
 
-	// Load peers.json to validate all nodes have identity files
-	peersData, err := os.ReadFile("peers.json")
-	if err != nil {
-		return nil, fmt.Errorf("failed to read peers.json: %w", err)
-	}
-
-	peers := make(map[string]string)
-	if err := json.Unmarshal(peersData, &peers); err != nil {
-		return nil, fmt.Errorf("failed to parse peers.json: %w", err)
-	}
-
 	store := &fileStore{
 		identityDir:     identityDir,
 		currentNodeName: nodeName,
@@ -96,8 +86,13 @@ func NewFileStore(identityDir, nodeName string, decrypt bool) (*fileStore, error
 		initiatorPubKey: initiatorPubKey,
 	}
 
+	cluster, err := config.LoadClusterFromFile()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load cluster: %w", err)
+	}
+
 	// Check that each node in peers.json has an identity file
-	for nodeName, nodeID := range peers {
+	for nodeName, nodeID := range cluster.Peers {
 		identityFilePath := filepath.Join(identityDir, fmt.Sprintf("%s_identity.json", nodeName))
 		data, err := os.ReadFile(identityFilePath)
 		if err != nil {

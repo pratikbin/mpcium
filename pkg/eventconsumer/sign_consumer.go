@@ -29,20 +29,22 @@ type SigningConsumer interface {
 
 // signingConsumer implements SigningConsumer.
 type signingConsumer struct {
-	natsConn *nats.Conn
-	pubsub   messaging.PubSub
-	jsPubsub messaging.StreamPubsub
+	clusterID string
+	natsConn  *nats.Conn
+	pubsub    messaging.PubSub
+	jsPubsub  messaging.StreamPubsub
 
 	// jsSub holds the JetStream subscription, so it can be cleaned up during Close().
 	jsSub messaging.Subscription
 }
 
 // NewSigningConsumer returns a new instance of SigningConsumer.
-func NewSigningConsumer(natsConn *nats.Conn, jsPubsub messaging.StreamPubsub, pubsub messaging.PubSub) SigningConsumer {
+func NewSigningConsumer(clusterID string, natsConn *nats.Conn, jsPubsub messaging.StreamPubsub, pubsub messaging.PubSub) SigningConsumer {
 	return &signingConsumer{
-		natsConn: natsConn,
-		pubsub:   pubsub,
-		jsPubsub: jsPubsub,
+		clusterID: clusterID,
+		natsConn:  natsConn,
+		pubsub:    pubsub,
+		jsPubsub:  jsPubsub,
 	}
 }
 
@@ -100,7 +102,8 @@ func (sc *signingConsumer) handleSigningEvent(msg jetstream.Msg) {
 	}()
 
 	// Publish the signing event with the reply inbox.
-	if err := sc.pubsub.PublishWithReply(event.MPCSigningEventTopic, replyInbox, msg.Data()); err != nil {
+	logger.Info("SigningConsumer: Publishing signing event with reply", "topic", fmt.Sprintf("%s:%s", event.MPCSigningEventTopic, sc.clusterID))
+	if err := sc.pubsub.PublishWithReply(fmt.Sprintf("%s:%s", event.MPCSigningEventTopic, sc.clusterID), replyInbox, msg.Data()); err != nil {
 		logger.Error("SigningConsumer: Failed to publish signing event with reply", err)
 		_ = msg.Nak()
 		return

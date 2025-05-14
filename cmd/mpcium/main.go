@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -63,6 +64,12 @@ func main() {
 						Usage: "Enable debug logging",
 						Value: false,
 					},
+					&cli.StringFlag{
+						Name:    "cluster-config",
+						Usage:   "Path to cluster configuration file",
+						Aliases: []string{"c"},
+						Value:   "cluster.json",
+					},
 				},
 				Action: runNode,
 			},
@@ -83,11 +90,53 @@ func main() {
 	}
 }
 
+// LoadClusterConfig loads cluster configuration from a JSON file
+// ClusterConfig structure for cluster.json
+type ClusterConfig struct {
+	ClusterID string            `json:"cluster_id"`
+	Peers     map[string]string `json:"peers"`
+}
+
+func LoadClusterConfig(filePath string) (*ClusterConfig, error) {
+	// If file path is empty, use default
+	if filePath == "" {
+		filePath = "cluster.json"
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("cluster configuration file not found: %s", filePath)
+	}
+
+	// Read file
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read cluster configuration file: %w", err)
+	}
+
+	// Parse JSON
+	var config ClusterConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse cluster configuration: %w", err)
+	}
+
+	// Validate configuration
+	if config.ClusterID == "" {
+		return nil, fmt.Errorf("invalid cluster configuration: missing cluster_id")
+	}
+	if len(config.Peers) == 0 {
+		return nil, fmt.Errorf("invalid cluster configuration: no peers defined")
+	}
+
+	return &config, nil
+}
+
 func runNode(ctx context.Context, c *cli.Command) error {
 	nodeName := c.String("name")
 	decryptPrivateKey := c.Bool("decrypt-private-key")
 	usePrompts := c.Bool("prompt-credentials")
 	debug := c.Bool("debug")
+	clusterConfigPath := c.String("cluster-config")
 
 	config.InitViperConfig()
 	environment := viper.GetString("environment")
@@ -101,12 +150,18 @@ func runNode(ctx context.Context, c *cli.Command) error {
 		checkRequiredConfigValues()
 	}
 
+	// Load cluster configuration
+	clusterConfig, err := LoadClusterConfig(clusterConfigPath)
+	if err != nil {
+		logger.Fatal("Failed to load cluster configuration", err)
+	}
+
 	consulClient := infra.GetConsulClient(environment)
 	badgerKV := NewBadgerKV(nodeName)
 	defer badgerKV.Close()
 
 	keyinfoStore := keyinfo.NewStore(consulClient.KV())
-	peers := LoadPeersFromConsul(consulClient)
+	peers := LoadPeersFromConsul(clusterConfig.ClusterID, consulClient)
 	nodeID := GetIDFromName(nodeName, peers)
 
 	identityStore, err := identity.NewFileStore("identity", nodeName, decryptPrivateKey)
@@ -142,7 +197,7 @@ func runNode(ctx context.Context, c *cli.Command) error {
 	logger.Info("Node is running", "peerID", nodeID, "name", nodeName)
 
 	peerNodeIDs := GetPeerIDs(peers)
-	peerRegistry := mpc.NewRegistry(nodeID, peerNodeIDs, consulClient.KV())
+	peerRegistry := mpc.NewRegistry(clusterConfig.ClusterID, nodeID, peerNodeIDs, consulClient.KV())
 
 	mpcNode := mpc.NewNode(
 		nodeID,
@@ -157,6 +212,7 @@ func runNode(ctx context.Context, c *cli.Command) error {
 	defer mpcNode.Close()
 
 	eventConsumer := eventconsumer.NewEventConsumer(
+		clusterConfig.ClusterID,
 		mpcNode,
 		pubsub,
 		genKeySuccessQueue,
@@ -173,7 +229,13 @@ func runNode(ctx context.Context, c *cli.Command) error {
 
 	timeoutConsumer.Run()
 	defer timeoutConsumer.Close()
-	signingConsumer := eventconsumer.NewSigningConsumer(natsConn, signingStream, pubsub)
+	logger.Info("Cluster cofngi", "cluster", clusterConfig)
+	signingConsumer := eventconsumer.NewSigningConsumer(
+		clusterConfig.ClusterID,
+		natsConn,
+		signingStream,
+		pubsub,
+	)
 
 	// Make the node ready before starting the signing consumer
 	peerRegistry.Ready()
@@ -295,9 +357,9 @@ func NewConsulClient(addr string) *api.Client {
 	return consulClient
 }
 
-func LoadPeersFromConsul(consulClient *api.Client) []config.Peer { // Create a Consul Key-Value store client
+func LoadPeersFromConsul(clusterID string, consulClient *api.Client) []config.Peer { // Create a Consul Key-Value store client
 	kv := consulClient.KV()
-	peers, err := config.LoadPeersFromConsul(kv, "mpc_peers/")
+	peers, err := config.LoadPeersFromConsul(kv, fmt.Sprintf("mpc_peers/%s/", clusterID))
 	if err != nil {
 		logger.Fatal("Failed to load peers from Consul", err)
 	}

@@ -2,6 +2,7 @@ package mpc
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,6 +28,7 @@ type PeerRegistry interface {
 }
 
 type registry struct {
+	clusterID   string
 	nodeID      string
 	peerNodeIDs []string
 	readyMap    map[string]bool
@@ -38,11 +40,13 @@ type registry struct {
 }
 
 func NewRegistry(
+	clusterID string,
 	nodeID string,
 	peerNodeIDs []string,
 	consulKV infra.ConsulKV,
 ) *registry {
 	return &registry{
+		clusterID:   clusterID,
 		consulKV:    consulKV,
 		nodeID:      nodeID,
 		peerNodeIDs: getPeerIDsExceptSelf(nodeID, peerNodeIDs),
@@ -61,8 +65,8 @@ func getPeerIDsExceptSelf(nodeID string, peerNodeIDs []string) []string {
 	return peerIDs
 }
 
-func (r *registry) readyKey(nodeID string) string {
-	return fmt.Sprintf("ready/%s", nodeID)
+func (r *registry) readyKey(clusterID string, nodeID string) string {
+	return fmt.Sprintf("ready/%s/%s", clusterID, nodeID)
 }
 
 func (r *registry) registerReadyPairs(peerIDs []string) {
@@ -91,7 +95,7 @@ func (r *registry) registerReadyPairs(peerIDs []string) {
 // Ready is called by the node when it complete generate preparams and starting to accept
 // incoming requests
 func (r *registry) Ready() error {
-	k := r.readyKey(r.nodeID)
+	k := r.readyKey(r.clusterID, r.nodeID)
 
 	kv := &api.KVPair{
 		Key:   k,
@@ -111,7 +115,7 @@ func (r *registry) WatchPeersReady() {
 	go r.logReadyStatus()
 	// first tick is executed immediately
 	for ; true; <-ticker.C {
-		pairs, _, err := r.consulKV.List("ready/", nil)
+		pairs, _, err := r.consulKV.List(fmt.Sprintf("ready/%s/", r.clusterID), nil)
 		if err != nil {
 			logger.Error("List ready keys failed", err)
 		}
@@ -174,9 +178,9 @@ func (r *registry) getReadyPeersFromKVStore(kvPairs api.KVPairs) []string {
 	var peers []string
 	for _, k := range kvPairs {
 		var peerNodeID string
-		_, err := fmt.Sscanf(k.Key, "ready/%s", &peerNodeID)
-		if err != nil {
-			logger.Error("Parse ready key failed", err)
+		parts := strings.Split(k.Key, "/")
+		if len(parts) == 3 && parts[0] == "ready" {
+			peerNodeID = parts[2]
 		}
 		if peerNodeID == r.nodeID {
 			continue
@@ -196,7 +200,7 @@ func (r *registry) ArePeersReady() bool {
 }
 
 func (r *registry) Resign() error {
-	k := r.readyKey(r.nodeID)
+	k := r.readyKey(r.clusterID, r.nodeID)
 
 	_, err := r.consulKV.Delete(k, nil)
 	if err != nil {

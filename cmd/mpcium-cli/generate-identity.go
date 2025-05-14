@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"filippo.io/age"
+	"github.com/fystack/mpcium/pkg/config"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
 )
@@ -67,7 +68,7 @@ func requestPassword() (string, error) {
 
 func generateIdentity(ctx context.Context, c *cli.Command) error {
 	nodeName := c.String("node")
-	peersPath := c.String("peers")
+	clusterPath := c.String("cluster")
 	identityDir := c.String("output-dir")
 	encryptKey := c.Bool("encrypt")
 	overwrite := c.Bool("overwrite")
@@ -85,27 +86,20 @@ func generateIdentity(ctx context.Context, c *cli.Command) error {
 	}
 
 	// Check if peers file exists
-	if _, err := os.Stat(peersPath); err != nil {
+	if _, err := os.Stat(clusterPath); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("peers file %s does not exist", peersPath)
+			return fmt.Errorf("peers file %s does not exist", clusterPath)
 		}
-		return fmt.Errorf("error checking peers file: %w", err)
+		return fmt.Errorf("error checking cluster file: %w", err)
 	}
 
-	// Read peers file
-	peersData, err := os.ReadFile(peersPath)
+	cluster, err := config.LoadClusterFromFile()
 	if err != nil {
-		return fmt.Errorf("failed to read peers file: %w", err)
-	}
-
-	// Parse peers JSON
-	var peers map[string]string
-	if err := json.Unmarshal(peersData, &peers); err != nil {
-		return fmt.Errorf("failed to parse peers JSON: %w", err)
+		return fmt.Errorf("failed to load cluster: %w", err)
 	}
 
 	// Find the node ID
-	nodeID, ok := peers[nodeName]
+	nodeID, ok := cluster.Peers[nodeName]
 	if !ok {
 		return fmt.Errorf("node %s not found in peers file", nodeName)
 	}
