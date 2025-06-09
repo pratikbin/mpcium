@@ -10,10 +10,9 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/eddsa/resharing"
 	"github.com/bnb-chain/tss-lib/v2/eddsa/signing"
 	"github.com/bnb-chain/tss-lib/v2/tss"
-	"github.com/fystack/mpcium/pkg/logger"
 )
 
-type EDDSASession struct {
+type EDDSAParty struct {
 	party
 	reshareParams *tss.ReSharingParameters
 	saveData      *keygen.LocalPartySaveData
@@ -21,24 +20,24 @@ type EDDSASession struct {
 }
 
 func NewEDDASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int,
-	reshareParams *tss.ReSharingParameters, saveData *keygen.LocalPartySaveData) *EDDSASession {
-	return &EDDSASession{
-		party:         *NewParty(walletID, partyID, partyIDs, threshold),
+	reshareParams *tss.ReSharingParameters, saveData *keygen.LocalPartySaveData, errCh chan error) *EDDSAParty {
+	return &EDDSAParty{
+		party:         *NewParty(walletID, partyID, partyIDs, threshold, errCh),
 		reshareParams: reshareParams,
 		saveData:      saveData,
 		outCh:         make(chan tss.Message, 1000),
 	}
 }
 
-func (s *EDDSASession) PartyID() *tss.PartyID {
+func (s *EDDSAParty) PartyID() *tss.PartyID {
 	return s.partyID
 }
 
-func (s *EDDSASession) GetOutCh() chan tss.Message {
+func (s *EDDSAParty) GetOutCh() chan tss.Message {
 	return s.outCh
 }
 
-func (s *EDDSASession) UpdateFromBytes(msgBytes []byte, from *tss.PartyID, isBroadcast bool) (bool, error) {
+func (s *EDDSAParty) UpdateFromBytes(msgBytes []byte, from *tss.PartyID, isBroadcast bool) (bool, error) {
 	ok, err := s.localParty.UpdateFromBytes(msgBytes, from, isBroadcast)
 	if err != nil {
 		return false, err
@@ -46,16 +45,16 @@ func (s *EDDSASession) UpdateFromBytes(msgBytes []byte, from *tss.PartyID, isBro
 	return ok, nil
 }
 
-func (s *EDDSASession) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
+func (s *EDDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
 	end := make(chan *keygen.LocalPartySaveData)
 	params := tss.NewParameters(tss.S256(), tss.NewPeerContext(s.partyIDs), s.partyID, len(s.partyIDs), s.threshold)
 	party := keygen.NewLocalParty(params, s.outCh, end)
 	runParty(s, ctx, party, send, end, finish)
 }
 
-func (s *EDDSASession) StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte)) {
+func (s *EDDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte)) {
 	if s.saveData == nil {
-		logger.Error("Save data is nil", errors.New("save data is nil"))
+		s.GetErrCh() <- errors.New("save data is nil")
 		return
 	}
 	end := make(chan *common.SignatureData)
@@ -64,10 +63,10 @@ func (s *EDDSASession) StartSigning(ctx context.Context, msg *big.Int, send func
 	runParty(s, ctx, party, send, end, finish)
 }
 
-func (s *EDDSASession) StartReshare(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID,
+func (s *EDDSAParty) StartReshare(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID,
 	oldThreshold, newThreshold int, send func(tss.Message), finish func([]byte)) {
 	if s.saveData == nil {
-		logger.Error("Save data is nil", errors.New("save data is nil"))
+		s.GetErrCh() <- errors.New("save data is nil")
 		return
 	}
 	end := make(chan *keygen.LocalPartySaveData)
