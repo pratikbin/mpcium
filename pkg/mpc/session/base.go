@@ -9,10 +9,10 @@ import (
 	"github.com/fystack/mpcium/pkg/identity"
 	"github.com/fystack/mpcium/pkg/keyinfo"
 	"github.com/fystack/mpcium/pkg/kvstore"
-	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/fystack/mpcium/pkg/messaging"
 	"github.com/fystack/mpcium/pkg/mpc/party"
 	"github.com/fystack/mpcium/pkg/types"
+	"github.com/nats-io/nats.go"
 )
 
 type Curve string
@@ -50,7 +50,9 @@ type session struct {
 
 	topicComposer *TopicComposer
 	composeKey    KeyComposerFn
-	mu            sync.Mutex
+
+	mu    sync.Mutex
+	errCh chan error
 }
 
 func NewSession(
@@ -62,54 +64,45 @@ func NewSession(
 	identityStore identity.Store,
 	kvstore kvstore.KVStore,
 ) *session {
+	errCh := make(chan error, 1000)
 	return &session{
 		walletID:      walletID,
 		pubSub:        pubSub,
 		direct:        direct,
 		identityStore: identityStore,
 		kvstore:       kvstore,
-		topicComposer: &TopicComposer{
-			ComposeBroadcastTopic: func() string {
-				return fmt.Sprintf(KeygenBroadcastTopic, walletID)
-			},
-			ComposeDirectTopic: func(nodeID string) string {
-				return fmt.Sprintf(KeygenDirectTopic, nodeID, walletID)
-			},
-		},
-		composeKey: func(id string) string {
-			return fmt.Sprintf("%s/%s", purpose, id)
-		},
+		errCh:         errCh,
 	}
 }
 
-func (s *session) SetParty(party party.PartyInterface) {
-	s.party = party
+func (s *session) ErrCh() chan error {
+	return s.errCh
 }
 
 func (s *session) Send(msg tss.Message) {
 	data, routing, err := msg.WireBytes()
 	if err != nil {
-		logger.Error("Failed to wire bytes", err)
+		s.errCh <- fmt.Errorf("Failed to wire bytes: %w", err)
 		return
 	}
 
 	tssMsg := types.NewTssMessage(s.walletID, data, routing.IsBroadcast, routing.From, routing.To)
 	signature, err := s.identityStore.SignMessage(&tssMsg)
 	if err != nil {
-		logger.Error("Failed to sign message", err)
+		s.errCh <- fmt.Errorf("Failed to sign message: %w", err)
 		return
 	}
 	tssMsg.Signature = signature
 	msgBytes, err := types.MarshalTssMessage(&tssMsg)
 	if err != nil {
-		logger.Error("Failed to marshal message", err)
+		s.errCh <- fmt.Errorf("Failed to marshal message: %w", err)
 		return
 	}
 
 	if routing.IsBroadcast && len(routing.To) == 0 {
 		err := s.pubSub.Publish(s.topicComposer.ComposeBroadcastTopic(), msgBytes)
 		if err != nil {
-			logger.Error("Failed to publish message", err)
+			s.errCh <- fmt.Errorf("Failed to publish message: %w", err)
 			return
 		}
 	} else {
@@ -118,23 +111,23 @@ func (s *session) Send(msg tss.Message) {
 			topic := s.topicComposer.ComposeDirectTopic(nodeID)
 			err := s.direct.Send(topic, msgBytes)
 			if err != nil {
-				logger.Error("Failed to send message", err)
+				s.errCh <- fmt.Errorf("Failed to send message: %w", err)
 				return
 			}
 		}
 	}
 }
 
-func (s *session) Receive(rawMsg []byte) {
+func (s *session) receive(rawMsg []byte) {
 	msg, err := types.UnmarshalTssMessage(rawMsg)
 	if err != nil {
-		logger.Error("Failed to unmarshal message", err)
+		s.errCh <- fmt.Errorf("Failed to unmarshal message: %w", err)
 		return
 	}
 
 	err = s.identityStore.VerifyMessage(msg)
 	if err != nil {
-		logger.Error("Failed to verify message", err)
+		s.errCh <- fmt.Errorf("Failed to verify message: %w", err)
 		return
 	}
 
@@ -149,45 +142,41 @@ func (s *session) Receive(rawMsg []byte) {
 	if isBroadcast || isToSelf {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		ok, err := s.party.UpdateFromBytes(msg.MsgBytes, msg.From, msg.IsBroadcast)
-		if !ok || err != nil {
-			logger.Error("Failed to update party", err)
-			return
-		}
+		s.party.InCh() <- *msg
 	}
 }
 
-// func (s *session) Listen() {
-// 	broadcast := func() {
-// 		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(natMsg *nats.Msg) {
-// 			msg := natMsg.Data
-// 			s.receiveTssMessage(msg)
-// 		})
+func (s *session) Listen() {
+	broadcast := func() {
+		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(natMsg *nats.Msg) {
+			msg := natMsg.Data
+			s.receive(msg)
+		})
 
-// 		if err != nil {
-// 			s.ErrCh <- fmt.Errorf("Failed to subscribe to broadcast topic %s: %w", s.topicComposer.ComposeBroadcastTopic(), err)
-// 			return
-// 		}
+		if err != nil {
+			s.errCh <- fmt.Errorf("Failed to subscribe to broadcast topic %s: %w", s.topicComposer.ComposeBroadcastTopic(), err)
+			return
+		}
 
-// 		s.broadcastSub = sub
-// 	}
+		s.broadcastSub = sub
+	}
 
-// 	direct := func() {
-// 		sub, err := s.direct.Listen(s.topicComposer.ComposeDirectTopic(s.party.PartyID().String()), func(msg []byte) {
-// 			s.receiveTssMessage(msg)
-// 		})
+	direct := func() {
+		sub, err := s.direct.Listen(s.topicComposer.ComposeDirectTopic(s.party.PartyID().String()), func(msg []byte) {
+			s.receive(msg)
+		})
 
-// 		if err != nil {
-// 			s.ErrCh <- fmt.Errorf("Failed to subscribe to direct topic %s: %w", s.topicComposer.ComposeDirectTopic(s.party.PartyID().String()), err)
-// 			return
-// 		}
+		if err != nil {
+			s.errCh <- fmt.Errorf("Failed to subscribe to direct topic %s: %w", s.topicComposer.ComposeDirectTopic(s.party.PartyID().String()), err)
+			return
+		}
 
-// 		s.directSub = sub
-// 	}
+		s.directSub = sub
+	}
 
-// 	go broadcast()
-// 	go direct()
-// }
+	go broadcast()
+	go direct()
+}
 
 func (s *session) SaveKey(participantPeerIDs []string, threshold int, isReshared bool, data []byte) (err error) {
 
@@ -199,13 +188,13 @@ func (s *session) SaveKey(participantPeerIDs []string, threshold int, isReshared
 
 	err = s.keyinfoStore.Save(s.composeKey(s.walletID), &keyInfo)
 	if err != nil {
-		logger.Error("Failed to save keyinfo", err, "walletID", s.walletID)
+		s.errCh <- fmt.Errorf("Failed to save keyinfo: %w", err)
 		return
 	}
 
 	err = s.kvstore.Put(s.composeKey(s.walletID), data)
 	if err != nil {
-		logger.Error("Failed to save key", err, "walletID", s.walletID)
+		s.errCh <- fmt.Errorf("Failed to save key: %w", err)
 		return
 	}
 

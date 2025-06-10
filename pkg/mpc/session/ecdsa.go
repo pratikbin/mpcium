@@ -1,22 +1,28 @@
 package session
 
 import (
+	"context"
+
+	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
+	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/fystack/mpcium/pkg/identity"
 	"github.com/fystack/mpcium/pkg/kvstore"
 	"github.com/fystack/mpcium/pkg/messaging"
 	"github.com/fystack/mpcium/pkg/mpc/party"
 )
 
-type EcdsaSession struct {
+type ECDSASession struct {
 	*session
 }
 
-func NewECDSASession(walletID string, pubSub messaging.PubSub, direct messaging.DirectMessaging, identityStore identity.Store, kvstore kvstore.KVStore) *ECDSASession {
+func NewECDSASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int, prepareParams *keygen.LocalPreParams, pubSub messaging.PubSub, direct messaging.DirectMessaging, identityStore identity.Store, kvstore kvstore.KVStore) *ECDSASession {
 	s := NewSession(CurveSecp256k1, PurposeKeygen, walletID, pubSub, direct, identityStore, kvstore)
-	party := party.NewECDSAParty(walletID, s.PartyID(), s.PartyIDs(), s.threshold, s.prepareParams, s.reshareParams, s.saveData)
-	s.SetParty(party)
+	s.party = party.NewECDSAParty(walletID, partyID, partyIDs, threshold, *prepareParams, nil, s.errCh)
 	return &ECDSASession{
 		session: s,
-		party:   party,
 	}
+}
+
+func (s *ECDSASession) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
+	s.party.StartKeygen(ctx, send, finish)
 }

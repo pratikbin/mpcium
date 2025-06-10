@@ -33,10 +33,6 @@ func (s *EDDSAParty) PartyID() *tss.PartyID {
 	return s.partyID
 }
 
-func (s *EDDSAParty) GetOutCh() chan tss.Message {
-	return s.outCh
-}
-
 func (s *EDDSAParty) UpdateFromBytes(msgBytes []byte, from *tss.PartyID, isBroadcast bool) (bool, error) {
 	ok, err := s.localParty.UpdateFromBytes(msgBytes, from, isBroadcast)
 	if err != nil {
@@ -54,7 +50,7 @@ func (s *EDDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), fi
 
 func (s *EDDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte)) {
 	if s.saveData == nil {
-		s.GetErrCh() <- errors.New("save data is nil")
+		s.ErrCh() <- errors.New("save data is nil")
 		return
 	}
 	end := make(chan *common.SignatureData)
@@ -66,7 +62,7 @@ func (s *EDDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(t
 func (s *EDDSAParty) StartReshare(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID,
 	oldThreshold, newThreshold int, send func(tss.Message), finish func([]byte)) {
 	if s.saveData == nil {
-		s.GetErrCh() <- errors.New("save data is nil")
+		s.ErrCh() <- errors.New("save data is nil")
 		return
 	}
 	end := make(chan *keygen.LocalPartySaveData)

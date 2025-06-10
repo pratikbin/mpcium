@@ -21,31 +21,13 @@ type ECDSAParty struct {
 }
 
 func NewECDSAParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int,
-	prepareParams keygen.LocalPreParams, reshareParams *tss.ReSharingParameters, saveData *keygen.LocalPartySaveData, errCh chan error) *ECDSAParty {
+	prepareParams keygen.LocalPreParams, reshareParams *tss.ReSharingParameters, errCh chan error) *ECDSAParty {
 	return &ECDSAParty{
 		party:         *NewParty(walletID, partyID, partyIDs, threshold, errCh),
 		prepareParams: prepareParams,
 		reshareParams: reshareParams,
-		saveData:      saveData,
 		outCh:         make(chan tss.Message, 1000),
 	}
-}
-
-func (s *ECDSAParty) PartyID() *tss.PartyID {
-	return s.partyID
-}
-
-func (s *ECDSAParty) GetOutCh() chan tss.Message {
-	return s.outCh
-}
-
-func (s *ECDSAParty) UpdateFromBytes(msgBytes []byte, from *tss.PartyID, isBroadcast bool) (bool, error) {
-	ok, err := s.localParty.UpdateFromBytes(msgBytes, from, isBroadcast)
-	if err != nil {
-		s.GetErrCh() <- err
-		return false, err
-	}
-	return ok, nil
 }
 
 func (s *ECDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
@@ -57,7 +39,7 @@ func (s *ECDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), fi
 
 func (s *ECDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte)) {
 	if s.saveData == nil {
-		s.GetErrCh() <- errors.New("save data is nil")
+		s.ErrCh() <- errors.New("save data is nil")
 		return
 	}
 	end := make(chan *common.SignatureData)
@@ -69,7 +51,7 @@ func (s *ECDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(t
 func (s *ECDSAParty) StartReshare(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID,
 	oldThreshold, newThreshold int, send func(tss.Message), finish func([]byte)) {
 	if s.saveData == nil {
-		s.GetErrCh() <- errors.New("save data is nil")
+		s.ErrCh() <- errors.New("save data is nil")
 		return
 	}
 	end := make(chan *keygen.LocalPartySaveData)
