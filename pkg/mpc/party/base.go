@@ -26,6 +26,7 @@ type PartyInterface interface {
 	StartReshare(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID, oldThreshold, newThreshold int, send func(tss.Message), finish func([]byte))
 
 	PartyID() *tss.PartyID
+	GetSaveData() []byte
 	SetSaveData(saveData []byte)
 	InCh() chan types.TssMessage
 	OutCh() chan tss.Message

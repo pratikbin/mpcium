@@ -30,6 +30,15 @@ func NewECDSAParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyI
 	}
 }
 
+func (s *ECDSAParty) GetSaveData() []byte {
+	saveData, err := json.Marshal(s.saveData)
+	if err != nil {
+		s.ErrCh() <- fmt.Errorf("failed serializing shares: %w", err)
+		return nil
+	}
+	return saveData
+}
+
 func (s *ECDSAParty) SetSaveData(saveData []byte) {
 	localSaveData := &keygen.LocalPartySaveData{}
 	err := json.Unmarshal(saveData, localSaveData)

@@ -222,6 +222,38 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 			signingSession.StartSigning(ctx, txBigInt, signingSession.Send, func(data []byte) {
 				cancel()
+				fmt.Println("data", data)
+				ok, r, s, signatureRecovery, err := signingSession.VerifySignature(msg.Tx, data)
+				if err != nil || !ok {
+					logger.Error("Failed to verify signature", err)
+					return
+				}
+
+				signingResult := event.SigningResultEvent{
+					WalletID:            msg.WalletID,
+					TxID:                msg.TxID,
+					NetworkInternalCode: msg.NetworkInternalCode,
+					ResultType:          event.SigningResultTypeSuccess,
+					Signature:           data,
+					R:                   r,
+					S:                   s,
+					SignatureRecovery:   signatureRecovery,
+				}
+
+				signingResultBytes, err := json.Marshal(signingResult)
+				if err != nil {
+					logger.Error("Failed to marshal signing result event", err)
+					return
+				}
+
+				err = ec.signingResultQueue.Enqueue(event.SigningResultCompleteTopic, signingResultBytes, &messaging.EnqueueOptions{
+					IdempotententKey: event.SigningResultCompleteTopic,
+				})
+				if err != nil {
+					logger.Error("Failed to publish signing result event", err)
+					return
+				}
+
 				logger.Info("Signing completed", "walletID", msg.WalletID, "txID", msg.TxID, "data", len(data))
 			})
 		}()

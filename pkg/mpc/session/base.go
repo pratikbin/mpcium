@@ -41,8 +41,11 @@ type KeyComposerFn func(id string) string
 type Session interface {
 	StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte))
 	StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte))
+
 	GetSaveData() ([]byte, error)
 	GetPublicKey(data []byte) []byte
+	VerifySignature(msg []byte, signature []byte) (bool, []byte, []byte, []byte, error)
+
 	Send(msg tss.Message)
 	Listen(nodeID string)
 	SaveKey(participantPeerIDs []string, threshold int, isReshared bool, data []byte) (err error)

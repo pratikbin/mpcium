@@ -2,7 +2,9 @@ package party
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/bnb-chain/tss-lib/v2/common"
@@ -25,6 +27,15 @@ func NewEDDASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.Party
 		reshareParams: reshareParams,
 		saveData:      saveData,
 	}
+}
+
+func (s *EDDSAParty) GetSaveData() []byte {
+	saveData, err := json.Marshal(s.saveData)
+	if err != nil {
+		s.ErrCh() <- fmt.Errorf("failed serializing shares: %w", err)
+		return nil
+	}
+	return saveData
 }
 
 func (s *EDDSAParty) SetSaveData(saveData []byte) {
