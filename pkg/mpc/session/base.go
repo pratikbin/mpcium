@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/bnb-chain/tss-lib/v2/common"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/fystack/mpcium/pkg/identity"
 	"github.com/fystack/mpcium/pkg/keyinfo"
@@ -44,7 +45,7 @@ type Session interface {
 
 	GetSaveData() ([]byte, error)
 	GetPublicKey(data []byte) []byte
-	VerifySignature(msg []byte, signature []byte) (bool, []byte, []byte, []byte, error)
+	VerifySignature(msg []byte, signature []byte) (common.SignatureData, error)
 
 	Send(msg tss.Message)
 	Listen(nodeID string)

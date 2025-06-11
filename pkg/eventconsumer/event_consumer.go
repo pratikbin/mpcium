@@ -222,9 +222,8 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 			signingSession.StartSigning(ctx, txBigInt, signingSession.Send, func(data []byte) {
 				cancel()
-				fmt.Println("data", data)
-				ok, r, s, signatureRecovery, err := signingSession.VerifySignature(msg.Tx, data)
-				if err != nil || !ok {
+				signatureData, err := signingSession.VerifySignature(msg.Tx, data)
+				if err != nil {
 					logger.Error("Failed to verify signature", err)
 					return
 				}
@@ -235,9 +234,9 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 					NetworkInternalCode: msg.NetworkInternalCode,
 					ResultType:          event.SigningResultTypeSuccess,
 					Signature:           data,
-					R:                   r,
-					S:                   s,
-					SignatureRecovery:   signatureRecovery,
+					R:                   signatureData.R,
+					S:                   signatureData.S,
+					SignatureRecovery:   signatureData.SignatureRecovery,
 				}
 
 				signingResultBytes, err := json.Marshal(signingResult)
