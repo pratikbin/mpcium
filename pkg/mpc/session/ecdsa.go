@@ -74,26 +74,26 @@ func (s *ECDSASession) GetPublicKey(data []byte) []byte {
 	return pubKeyBytes
 }
 
-func (s *ECDSASession) VerifySignature(msg []byte, signature []byte) (bool, []byte, []byte, []byte, error) {
+func (s *ECDSASession) VerifySignature(msg []byte, signature []byte) (common.SignatureData, error) {
 	signatureData := &common.SignatureData{}
 	err := json.Unmarshal(signature, signatureData)
 	if err != nil {
-		return false, nil, nil, nil, fmt.Errorf("failed to unmarshal signature data: %w", err)
+		return common.SignatureData{}, fmt.Errorf("failed to unmarshal signature data: %w", err)
 	}
 
 	data := s.party.GetSaveData()
 	if data == nil {
-		return false, nil, nil, nil, errors.New("save data is nil")
+		return common.SignatureData{}, errors.New("save data is nil")
 	}
 
 	saveData := &keygen.LocalPartySaveData{}
 	err = json.Unmarshal(data, saveData)
 	if err != nil {
-		return false, nil, nil, nil, fmt.Errorf("failed to unmarshal save data: %w", err)
+		return common.SignatureData{}, fmt.Errorf("failed to unmarshal save data: %w", err)
 	}
 
 	if saveData.ECDSAPub == nil {
-		return false, nil, nil, nil, errors.New("ECDSA public key is nil")
+		return common.SignatureData{}, errors.New("ECDSA public key is nil")
 	}
 
 	publicKey := saveData.ECDSAPub
@@ -110,8 +110,8 @@ func (s *ECDSASession) VerifySignature(msg []byte, signature []byte) (bool, []by
 	// Verify the signature
 	ok := ecdsa.Verify(pk, msg, r, sigS)
 	if !ok {
-		return false, nil, nil, nil, errors.New("signature verification failed")
+		return common.SignatureData{}, errors.New("signature verification failed")
 	}
 
-	return true, signatureData.R, signatureData.S, signatureData.SignatureRecovery, nil
+	return *signatureData, nil
 }
