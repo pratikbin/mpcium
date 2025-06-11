@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 
+	"github.com/bnb-chain/tss-lib/v2/common"
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/fystack/mpcium/pkg/encoding"
@@ -70,4 +72,46 @@ func (s *ECDSASession) GetPublicKey(data []byte) []byte {
 		return nil
 	}
 	return pubKeyBytes
+}
+
+func (s *ECDSASession) VerifySignature(msg []byte, signature []byte) (bool, []byte, []byte, []byte, error) {
+	signatureData := &common.SignatureData{}
+	err := json.Unmarshal(signature, signatureData)
+	if err != nil {
+		return false, nil, nil, nil, fmt.Errorf("failed to unmarshal signature data: %w", err)
+	}
+
+	data := s.party.GetSaveData()
+	if data == nil {
+		return false, nil, nil, nil, errors.New("save data is nil")
+	}
+
+	saveData := &keygen.LocalPartySaveData{}
+	err = json.Unmarshal(data, saveData)
+	if err != nil {
+		return false, nil, nil, nil, fmt.Errorf("failed to unmarshal save data: %w", err)
+	}
+
+	if saveData.ECDSAPub == nil {
+		return false, nil, nil, nil, errors.New("ECDSA public key is nil")
+	}
+
+	publicKey := saveData.ECDSAPub
+	pk := &ecdsa.PublicKey{
+		Curve: publicKey.Curve(),
+		X:     publicKey.X(),
+		Y:     publicKey.Y(),
+	}
+
+	// Convert signature components to big integers
+	r := new(big.Int).SetBytes(signatureData.R)
+	sigS := new(big.Int).SetBytes(signatureData.S)
+
+	// Verify the signature
+	ok := ecdsa.Verify(pk, msg, r, sigS)
+	if !ok {
+		return false, nil, nil, nil, errors.New("signature verification failed")
+	}
+
+	return true, signatureData.R, signatureData.S, signatureData.SignatureRecovery, nil
 }
