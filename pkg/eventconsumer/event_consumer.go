@@ -145,7 +145,7 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 				}
 
 				err = ec.genKeySucecssQueue.Enqueue(event.KeygenSuccessEventTopic, successEventBytes, &messaging.EnqueueOptions{
-					IdempotententKey: event.KeygenSuccessEventTopic,
+					IdempotententKey: fmt.Sprintf(event.TypeGenerateWalletSuccess, walletID),
 				})
 				if err != nil {
 					logger.Error("Failed to publish key generation success message", err)

@@ -1,8 +1,10 @@
 package event
 
 const (
-	KeygenSuccessEventTopic    = "mpc.keygen.success.*"
-	ResharingSuccessEventTopic = "mpc.resharing.success.*"
+	KeygenSuccessEventTopic    = "mpc.mpc_keygen_success.*"
+	ResharingSuccessEventTopic = "mpc.mpc_resharing_success.*"
+
+	TypeGenerateWalletSuccess = "mpc.mpc_keygen_success.%s"
 )
 
 type KeygenSuccessEvent struct {

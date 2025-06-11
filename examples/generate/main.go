@@ -28,7 +28,7 @@ func main() {
 
 	mpcClient := client.NewMPCClient(client.Options{
 		NatsConn: natsConn,
-		KeyPath:  "/home/viet/Documents/other/mpcium/event_initiator.key",
+		KeyPath:  "./../../event_initiator.key",
 	})
 	err = mpcClient.OnWalletCreationResult(func(event event.KeygenSuccessEvent) {
 		logger.Info("Received wallet creation result", "event", event)
