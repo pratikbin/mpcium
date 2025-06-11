@@ -40,7 +40,7 @@ func main() {
 	txMsg := &types.SignTxMessage{
 		KeyType:             types.KeyTypeSecp256k1,
 		WalletID:            "0bf609ad-63ed-4713-a673-e09d43f316d3",
-		NetworkInternalCode: "sepolia-devnet",
+		NetworkInternalCode: "ethereum-sepolia",
 		TxID:                txID,
 		Tx:                  dummyTx,
 	}

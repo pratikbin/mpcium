@@ -13,7 +13,6 @@ import (
 	"github.com/fystack/mpcium/pkg/identity"
 	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/fystack/mpcium/pkg/messaging"
-	"github.com/fystack/mpcium/pkg/mpc"
 	"github.com/fystack/mpcium/pkg/mpc/node"
 	"github.com/fystack/mpcium/pkg/types"
 	"github.com/nats-io/nats.go"
@@ -134,7 +133,7 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 				cancel()
 				session.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, false, data)
 
-				successEvent := &mpc.KeygenSuccessEvent{
+				successEvent := &event.KeygenSuccessEvent{
 					WalletID:    walletID,
 					ECDSAPubKey: session.GetPublicKey(data),
 				}
@@ -145,8 +144,8 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 					return
 				}
 
-				err = ec.genKeySucecssQueue.Enqueue(fmt.Sprintf(mpc.TypeGenerateWalletSuccess, walletID), successEventBytes, &messaging.EnqueueOptions{
-					IdempotententKey: fmt.Sprintf(mpc.TypeGenerateWalletSuccess, walletID),
+				err = ec.genKeySucecssQueue.Enqueue(event.KeygenSuccessEventTopic, successEventBytes, &messaging.EnqueueOptions{
+					IdempotententKey: event.KeygenSuccessEventTopic,
 				})
 				if err != nil {
 					logger.Error("Failed to publish key generation success message", err)
