@@ -6,18 +6,18 @@ import (
 	"math/big"
 
 	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/fystack/mpcium/pkg/types"
 )
 
 type party struct {
-	walletID   string
-	threshold  int
-	localParty tss.Party
-	partyID    *tss.PartyID
-	partyIDs   []*tss.PartyID
-	inCh       chan types.TssMessage
-	outCh      chan tss.Message
-	errCh      chan error
+	walletID  string
+	threshold int
+	partyID   *tss.PartyID
+	partyIDs  []*tss.PartyID
+	inCh      chan types.TssMessage
+	outCh     chan tss.Message
+	errCh     chan error
 }
 
 type PartyInterface interface {
@@ -26,7 +26,7 @@ type PartyInterface interface {
 	StartReshare(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID, oldThreshold, newThreshold int, send func(tss.Message), finish func([]byte))
 
 	PartyID() *tss.PartyID
-	Party() tss.Party
+	SetSaveData(saveData []byte)
 	InCh() chan types.TssMessage
 	OutCh() chan tss.Message
 	ErrCh() chan error
@@ -35,15 +35,11 @@ type PartyInterface interface {
 func NewParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int, errCh chan error) *party {
 	inCh := make(chan types.TssMessage, 1000)
 	outCh := make(chan tss.Message, 1000)
-	return &party{walletID, threshold, nil, partyID, partyIDs, inCh, outCh, errCh}
+	return &party{walletID, threshold, partyID, partyIDs, inCh, outCh, errCh}
 }
 
 func (p *party) PartyID() *tss.PartyID {
 	return p.partyID
-}
-
-func (p *party) Party() tss.Party {
-	return p.localParty
 }
 
 func (p *party) InCh() chan types.TssMessage {
@@ -59,13 +55,17 @@ func (p *party) ErrCh() chan error {
 }
 
 // runParty handles the common party execution loop
-func runParty[T any](s PartyInterface, ctx context.Context, party tss.Party, send func(tss.Message), endCh <-chan T, finish func([]byte)) {
+func runParty[T any](s PartyInterface, ctx context.Context, party tss.Party, send func(tss.Message), endCh chan T, finish func([]byte)) {
+	// Start the party in a goroutine
 	go func() {
+		logger.Info("Starting party", "partyID", s.PartyID().String())
 		if err := party.Start(); err != nil {
 			s.ErrCh() <- err
+			return
 		}
 	}()
 
+	// Main message handling loop
 	for {
 		select {
 		case <-ctx.Done():
@@ -76,8 +76,8 @@ func runParty[T any](s PartyInterface, ctx context.Context, party tss.Party, sen
 				s.ErrCh() <- err
 				return
 			}
-		case msg := <-s.OutCh():
-			send(msg)
+		case out := <-s.OutCh():
+			send(out)
 		case result := <-endCh:
 			bz, err := json.Marshal(result)
 			if err != nil {
