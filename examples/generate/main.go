@@ -7,8 +7,8 @@ import (
 	"syscall"
 
 	"github.com/fystack/mpcium/pkg/client"
+	"github.com/fystack/mpcium/pkg/event"
 	"github.com/fystack/mpcium/pkg/logger"
-	"github.com/fystack/mpcium/pkg/mpc"
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 )
@@ -30,7 +30,7 @@ func main() {
 		NatsConn: natsConn,
 		KeyPath:  "/home/viet/Documents/other/mpcium/event_initiator.key",
 	})
-	err = mpcClient.OnWalletCreationResult(func(event mpc.KeygenSuccessEvent) {
+	err = mpcClient.OnWalletCreationResult(func(event event.KeygenSuccessEvent) {
 		logger.Info("Received wallet creation result", "event", event)
 	})
 	if err != nil {

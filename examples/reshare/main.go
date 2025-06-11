@@ -7,8 +7,9 @@ import (
 	"syscall"
 
 	"github.com/fystack/mpcium/pkg/client"
+	"github.com/fystack/mpcium/pkg/event"
 	"github.com/fystack/mpcium/pkg/logger"
-	"github.com/fystack/mpcium/pkg/mpc"
+	"github.com/fystack/mpcium/pkg/types"
 	"github.com/nats-io/nats.go"
 )
 
@@ -29,7 +30,7 @@ func main() {
 		NatsConn: natsConn,
 		KeyPath:  "/home/viet/Documents/other/mpcium/event_initiator.key",
 	})
-	err = mpcClient.OnResharingResult(func(event mpc.ResharingSuccessEvent) {
+	err = mpcClient.OnResharingResult(func(event event.ResharingSuccessEvent) {
 		logger.Info("Received resharing result", "event", event)
 	})
 	if err != nil {
@@ -37,7 +38,7 @@ func main() {
 	}
 
 	walletID := "892122fd-f2f4-46dc-be25-6fd0b83dff60"
-	if err := mpcClient.Resharing(walletID, 2); err != nil {
+	if err := mpcClient.Resharing(walletID, 2, types.KeyTypeSecp256k1); err != nil {
 		logger.Fatal("Resharing failed", err)
 	}
 	logger.Info("Resharing sent, awaiting result...", "walletID", walletID)
