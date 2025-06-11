@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/big"
 	"sync"
 	"time"
 
+	"github.com/fystack/mpcium/pkg/event"
 	"github.com/fystack/mpcium/pkg/identity"
 	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/fystack/mpcium/pkg/messaging"
+	"github.com/fystack/mpcium/pkg/mpc"
 	"github.com/fystack/mpcium/pkg/mpc/node"
 	"github.com/fystack/mpcium/pkg/types"
 	"github.com/nats-io/nats.go"
@@ -84,10 +87,10 @@ func (ec *eventConsumer) Run() {
 		log.Fatal("Failed to consume key reconstruction event", err)
 	}
 
-	// err = ec.consumeTxSigningEvent()
-	// if err != nil {
-	// 	log.Fatal("Failed to consume tx signing event", err)
-	// }
+	err = ec.consumeTxSigningEvent()
+	if err != nil {
+		log.Fatal("Failed to consume tx signing event", err)
+	}
 
 	// err = ec.consumeResharingEvent()
 	// if err != nil {
@@ -121,19 +124,43 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 			return
 		}
 
-		go session.StartKeygen(context.Background(), session.Send, func(data []byte) {
-			logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", walletID)
-		})
-		go session.Listen()
-		logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", walletID)
+		// Start listening for messages first
+		go session.Listen(ec.node.ID())
+
+		// Start the key generation process
 		go func() {
-			for {
-				select {
-				case err := <-session.ErrCh():
-					if err != nil {
-						logger.Error("Key generation session error", err)
-					}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+			session.StartKeygen(ctx, session.Send, func(data []byte) {
+				cancel()
+				session.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, false, data)
+
+				successEvent := &mpc.KeygenSuccessEvent{
+					WalletID:    walletID,
+					ECDSAPubKey: session.GetPublicKey(data),
 				}
+
+				successEventBytes, err := json.Marshal(successEvent)
+				if err != nil {
+					logger.Error("Failed to marshal keygen success event", err)
+					return
+				}
+
+				err = ec.genKeySucecssQueue.Enqueue(fmt.Sprintf(mpc.TypeGenerateWalletSuccess, walletID), successEventBytes, &messaging.EnqueueOptions{
+					IdempotententKey: fmt.Sprintf(mpc.TypeGenerateWalletSuccess, walletID),
+				})
+				if err != nil {
+					logger.Error("Failed to publish key generation success message", err)
+					return
+				}
+				logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", walletID, "data", len(data))
+			})
+		}()
+
+		// Handle errors from the session
+		go func() {
+			for err := range session.ErrCh() {
+				logger.Error("Error from session", err)
+				return
 			}
 		}()
 	})
@@ -145,174 +172,115 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 	return nil
 }
 
-// func (ec *eventConsumer) consumeTxSigningEvent() error {
-// 	sub, err := ec.pubsub.Subscribe(MPCSignEvent, func(natMsg *nats.Msg) {
-// 		raw := natMsg.Data
-// 		var msg types.SignTxMessage
-// 		err := json.Unmarshal(raw, &msg)
-// 		if err != nil {
-// 			logger.Error("Failed to unmarshal signing message", err)
-// 			return
-// 		}
+func (ec *eventConsumer) consumeTxSigningEvent() error {
+	sub, err := ec.pubsub.Subscribe(MPCSignEvent, func(natMsg *nats.Msg) {
+		raw := natMsg.Data
+		var msg types.SignTxMessage
+		err := json.Unmarshal(raw, &msg)
+		if err != nil {
+			logger.Error("Failed to unmarshal signing message", err)
+			return
+		}
 
-// 		err = ec.identityStore.VerifyInitiatorMessage(&msg)
-// 		if err != nil {
-// 			logger.Error("Failed to verify initiator message", err)
-// 			return
-// 		}
+		err = ec.identityStore.VerifyInitiatorMessage(&msg)
+		if err != nil {
+			logger.Error("Failed to verify initiator message", err)
+			return
+		}
 
-// 		logger.Info(
-// 			"Received signing event",
-// 			"waleltID",
-// 			msg.WalletID,
-// 			"type",
-// 			msg.KeyType,
-// 			"tx",
-// 			msg.TxID,
-// 			"Id",
-// 			ec.node.ID(),
-// 		)
+		logger.Info("Received signing event", "msg", msg)
 
-// 		// Check for duplicate session and track if new
-// 		if ec.checkDuplicateSession(msg.WalletID, msg.TxID) {
-// 			natMsg.Term()
-// 			return
-// 		}
+		// Check for duplicate session and track if new
+		if ec.checkDuplicateSession(msg.WalletID, msg.TxID) {
+			natMsg.Term()
+			return
+		}
 
-// 		var session mpc.ISigningSession
-// 		switch msg.KeyType {
-// 		case types.KeyTypeSecp256k1:
-// 			session, err = ec.node.CreateSigningSession(
-// 				msg.WalletID,
-// 				msg.TxID,
-// 				msg.NetworkInternalCode,
-// 				ec.mpcThreshold,
-// 				ec.signingResultQueue,
-// 			)
-// 		case types.KeyTypeEd25519:
-// 			session, err = ec.node.CreateEDDSASigningSession(
-// 				msg.WalletID,
-// 				msg.TxID,
-// 				msg.NetworkInternalCode,
-// 				ec.mpcThreshold,
-// 				ec.signingResultQueue,
-// 			)
+		signingSession, err := ec.node.CreateSigningSession(
+			msg.KeyType,
+			msg.WalletID,
+			msg.TxID,
+			ec.mpcThreshold,
+			ec.signingResultQueue,
+		)
 
-// 		}
+		if err != nil {
+			ec.handleSigningSessionError(
+				msg.WalletID,
+				msg.TxID,
+				msg.NetworkInternalCode,
+				err,
+				"Failed to create signing session",
+				natMsg,
+			)
+			return
+		}
 
-// 		if err != nil {
-// 			ec.handleSigningSessionError(
-// 				msg.WalletID,
-// 				msg.TxID,
-// 				msg.NetworkInternalCode,
-// 				err,
-// 				"Failed to create signing session",
-// 				natMsg,
-// 			)
-// 			return
-// 		}
+		go signingSession.Listen(ec.node.ID())
 
-// 		txBigInt := new(big.Int).SetBytes(msg.Tx)
-// 		err = session.Init(txBigInt)
-// 		if err != nil {
-// 			if errors.Is(err, mpc.ErrNotEnoughParticipants) {
-// 				logger.Info("RETRY LATER: Not enough participants to sign")
-// 				//Return for retry later
-// 				return
-// 			}
-// 			ec.handleSigningSessionError(
-// 				msg.WalletID,
-// 				msg.TxID,
-// 				msg.NetworkInternalCode,
-// 				err,
-// 				"Failed to init signing session",
-// 				natMsg,
-// 			)
-// 			return
-// 		}
+		txBigInt := new(big.Int).SetBytes(msg.Tx)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+			signingSession.StartSigning(ctx, txBigInt, signingSession.Send, func(data []byte) {
+				cancel()
+				logger.Info("Signing completed", "walletID", msg.WalletID, "txID", msg.TxID, "data", len(data))
+			})
+		}()
 
-// 		// Mark session as already processed
-// 		ec.addSession(msg.WalletID, msg.TxID)
+		// Mark session as already processed
+		ec.addSession(msg.WalletID, msg.TxID)
 
-// 		ctx, done := context.WithCancel(context.Background())
-// 		go func() {
-// 			for {
-// 				select {
-// 				case <-ctx.Done():
-// 					return
-// 				case err := <-session.ErrChan():
-// 					if err != nil {
-// 						ec.handleSigningSessionError(
-// 							msg.WalletID,
-// 							msg.TxID,
-// 							msg.NetworkInternalCode,
-// 							err,
-// 							"Failed to sign tx",
-// 							natMsg,
-// 						)
-// 						return
-// 					}
-// 				}
-// 			}
-// 		}()
+		go func() {
+			for err := range signingSession.ErrCh() {
+				logger.Error("Error from session", err)
+				if err != nil {
+					ec.handleSigningSessionError(
+						msg.WalletID,
+						msg.TxID,
+						msg.NetworkInternalCode,
+						err,
+						"Failed to sign tx",
+						natMsg,
+					)
+					return
+				}
+			}
+		}()
+	})
 
-// 		session.ListenToIncomingMessageAsync()
-// 		// TODO: use consul distributed lock here, only sign after all nodes has already completed listing to incoming message async
-// 		// The purpose of the sleep is to be ensuring that the node has properly set up its message listeners
-// 		// before it starts the signing process. If the signing process starts sending messages before other nodes
-// 		// have set up their listeners, those messages might be missed, potentially causing the signing process to fail.
-// 		// One solution:
-// 		// The messaging includes mechanisms for direct point-to-point communication (in point2point.go).
-// 		// The nodes could explicitly coordinate through request-response patterns before starting signing
-// 		time.Sleep(1 * time.Second)
+	ec.signingSub = sub
+	if err != nil {
+		return err
+	}
 
-// 		onSuccess := func(data []byte) {
-// 			done()
-// 			if natMsg.Reply != "" {
-// 				err = ec.pubsub.Publish(natMsg.Reply, data)
-// 				if err != nil {
-// 					logger.Error("Failed to publish reply", err)
-// 				} else {
-// 					logger.Info("Reply to the original message", "reply", natMsg.Reply)
-// 				}
-// 			}
-// 		}
-// 		go session.Sign(onSuccess)
-// 	})
+	return nil
+}
 
-// 	ec.signingSub = sub
-// 	if err != nil {
-// 		return err
-// 	}
+func (ec *eventConsumer) handleSigningSessionError(walletID, txID, NetworkInternalCode string, err error, errMsg string, natMsg *nats.Msg) {
+	logger.Error("signing session error", err, "walletID", walletID, "txID", txID, "error", errMsg)
+	signingResult := event.SigningResultEvent{
+		ResultType:          event.SigningResultTypeError,
+		NetworkInternalCode: NetworkInternalCode,
+		WalletID:            walletID,
+		TxID:                txID,
+		ErrorReason:         errMsg,
+	}
 
-// 	return nil
-// }
+	signingResultBytes, err := json.Marshal(signingResult)
+	if err != nil {
+		logger.Error("failed to marshal signing result event", err)
+		return
+	}
 
-// func (ec *eventConsumer) handleSigningSessionError(walletID, txID, NetworkInternalCode string, err error, errMsg string, natMsg *nats.Msg) {
-// 	logger.Error("Signing session error", err, "walletID", walletID, "txID", txID, "error", errMsg)
-// 	signingResult := event.SigningResultEvent{
-// 		ResultType:          event.SigningResultTypeError,
-// 		NetworkInternalCode: NetworkInternalCode,
-// 		WalletID:            walletID,
-// 		TxID:                txID,
-// 		ErrorReason:         errMsg,
-// 	}
-
-// 	signingResultBytes, err := json.Marshal(signingResult)
-// 	if err != nil {
-// 		logger.Error("Failed to marshal signing result event", err)
-// 		return
-// 	}
-
-// 	natMsg.Ack()
-// 	err = ec.signingResultQueue.Enqueue(event.SigningResultCompleteTopic, signingResultBytes, &messaging.EnqueueOptions{
-// 		IdempotententKey: txID,
-// 	})
-// 	if err != nil {
-// 		logger.Error("Failed to publish signing result event", err)
-// 		return
-// 	}
-// }
+	natMsg.Ack()
+	err = ec.signingResultQueue.Enqueue(event.SigningResultCompleteTopic, signingResultBytes, &messaging.EnqueueOptions{
+		IdempotententKey: txID,
+	})
+	if err != nil {
+		logger.Error("Failed to publish signing result event", err)
+		return
+	}
+}
 
 // func (ec *eventConsumer) consumeResharingEvent() error {
 // 	sub, err := ec.pubsub.Subscribe(MPCResharingEvent, func(natMsg *nats.Msg) {

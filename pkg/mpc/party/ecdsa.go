@@ -2,7 +2,9 @@ package party
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/bnb-chain/tss-lib/v2/common"
@@ -14,26 +16,38 @@ import (
 
 type ECDSAParty struct {
 	party
-	prepareParams keygen.LocalPreParams
+	preParams     keygen.LocalPreParams
 	reshareParams *tss.ReSharingParameters
 	saveData      *keygen.LocalPartySaveData
-	outCh         chan tss.Message
 }
 
 func NewECDSAParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int,
-	prepareParams keygen.LocalPreParams, reshareParams *tss.ReSharingParameters, errCh chan error) *ECDSAParty {
+	preParams keygen.LocalPreParams, reshareParams *tss.ReSharingParameters, errCh chan error) *ECDSAParty {
 	return &ECDSAParty{
 		party:         *NewParty(walletID, partyID, partyIDs, threshold, errCh),
-		prepareParams: prepareParams,
+		preParams:     preParams,
 		reshareParams: reshareParams,
-		outCh:         make(chan tss.Message, 1000),
 	}
 }
 
+func (s *ECDSAParty) SetSaveData(saveData []byte) {
+	localSaveData := &keygen.LocalPartySaveData{}
+	err := json.Unmarshal(saveData, localSaveData)
+	if err != nil {
+		s.ErrCh() <- fmt.Errorf("failed deserializing shares: %w", err)
+		return
+	}
+	localSaveData.ECDSAPub.SetCurve(tss.S256())
+	for _, xj := range localSaveData.BigXj {
+		xj.SetCurve(tss.S256())
+	}
+	s.saveData = localSaveData
+}
+
 func (s *ECDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
-	end := make(chan *keygen.LocalPartySaveData)
+	end := make(chan *keygen.LocalPartySaveData, 1)
 	params := tss.NewParameters(tss.S256(), tss.NewPeerContext(s.partyIDs), s.partyID, len(s.partyIDs), s.threshold)
-	party := keygen.NewLocalParty(params, s.outCh, end, s.prepareParams)
+	party := keygen.NewLocalParty(params, s.outCh, end, s.preParams)
 	runParty(s, ctx, party, send, end, finish)
 }
 
@@ -42,7 +56,7 @@ func (s *ECDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(t
 		s.ErrCh() <- errors.New("save data is nil")
 		return
 	}
-	end := make(chan *common.SignatureData)
+	end := make(chan *common.SignatureData, 1)
 	params := tss.NewParameters(tss.S256(), tss.NewPeerContext(s.partyIDs), s.partyID, len(s.partyIDs), s.threshold)
 	party := signing.NewLocalParty(msg, params, *s.saveData, s.outCh, end)
 	runParty(s, ctx, party, send, end, finish)
@@ -54,7 +68,7 @@ func (s *ECDSAParty) StartReshare(ctx context.Context, oldPartyIDs, newPartyIDs 
 		s.ErrCh() <- errors.New("save data is nil")
 		return
 	}
-	end := make(chan *keygen.LocalPartySaveData)
+	end := make(chan *keygen.LocalPartySaveData, 1)
 	params := tss.NewReSharingParameters(
 		tss.S256(),
 		tss.NewPeerContext(oldPartyIDs),

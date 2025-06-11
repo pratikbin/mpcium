@@ -16,7 +16,6 @@ type EDDSAParty struct {
 	party
 	reshareParams *tss.ReSharingParameters
 	saveData      *keygen.LocalPartySaveData
-	outCh         chan tss.Message
 }
 
 func NewEDDASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int,
@@ -25,20 +24,11 @@ func NewEDDASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.Party
 		party:         *NewParty(walletID, partyID, partyIDs, threshold, errCh),
 		reshareParams: reshareParams,
 		saveData:      saveData,
-		outCh:         make(chan tss.Message, 1000),
 	}
 }
 
-func (s *EDDSAParty) PartyID() *tss.PartyID {
-	return s.partyID
-}
-
-func (s *EDDSAParty) UpdateFromBytes(msgBytes []byte, from *tss.PartyID, isBroadcast bool) (bool, error) {
-	ok, err := s.localParty.UpdateFromBytes(msgBytes, from, isBroadcast)
-	if err != nil {
-		return false, err
-	}
-	return ok, nil
+func (s *EDDSAParty) SetSaveData(saveData []byte) {
+	// s.saveData = saveData.(*keygen.LocalPartySaveData)
 }
 
 func (s *EDDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {

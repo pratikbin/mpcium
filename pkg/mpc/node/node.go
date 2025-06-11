@@ -46,14 +46,17 @@ func NewNode(nodeID string, peerIDs []string, pubSub messaging.PubSub, direct me
 	}
 }
 
-func (n *Node) CreateKeygenSession(_ types.KeyType, walletID string, threshold int, successQueue messaging.MessageQueue) (*session.ECDSASession, error) {
+func (n *Node) ID() string {
+	return n.nodeID
+}
+
+func (n *Node) CreateKeygenSession(_ types.KeyType, walletID string, threshold int, successQueue messaging.MessageQueue) (session.Session, error) {
 	if n.peerRegistry.GetReadyPeersCount() < int64(threshold+1) {
 		return nil, fmt.Errorf("not enough peers to create gen session! expected %d, got %d", threshold+1, n.peerRegistry.GetReadyPeersCount())
 	}
 
 	readyPeerIDs := n.peerRegistry.GetReadyPeersIncludeSelf()
 	selfPartyID, allPartyIDs := n.generatePartyIDs("keygen", readyPeerIDs)
-
 	preparams, err := n.getECDSAPreParams(false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get preparams: %w", err)
@@ -65,14 +68,48 @@ func (n *Node) CreateKeygenSession(_ types.KeyType, walletID string, threshold i
 		selfPartyID,
 		allPartyIDs,
 		threshold,
-		preparams,
+		*preparams,
 		n.pubSub,
 		n.direct,
 		n.identityStore,
 		n.kvstore,
+		n.keyinfoStore,
 	)
 
 	return ecdsaSession, nil
+}
+
+func (n *Node) CreateSigningSession(_ types.KeyType, walletID string, txID string, threshold int, successQueue messaging.MessageQueue) (session.Session, error) {
+	if n.peerRegistry.GetReadyPeersCount() < int64(threshold+1) {
+		return nil, fmt.Errorf("not enough peers to create gen session! expected %d, got %d", threshold+1, n.peerRegistry.GetReadyPeersCount())
+	}
+
+	readyPeerIDs := n.peerRegistry.GetReadyPeersIncludeSelf()
+	selfPartyID, allPartyIDs := n.generatePartyIDs("keygen", readyPeerIDs)
+	ecdsaSession := session.NewECDSASession(
+		walletID,
+		selfPartyID,
+		allPartyIDs,
+		threshold,
+		keygen.LocalPreParams{},
+		n.pubSub,
+		n.direct,
+		n.identityStore,
+		n.kvstore,
+		n.keyinfoStore,
+	)
+	saveData, err := ecdsaSession.GetSaveData()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get save data: %w", err)
+	}
+
+	ecdsaSession.SetSaveData(saveData)
+
+	return ecdsaSession, nil
+}
+
+func (n *Node) GetReadyPeersIncludeSelf() []string {
+	return n.peerRegistry.GetReadyPeersIncludeSelf()
 }
 
 func (n *Node) generatePartyIDs(purpose string, readyPeerIDs []string) (self *tss.PartyID, all []*tss.PartyID) {
