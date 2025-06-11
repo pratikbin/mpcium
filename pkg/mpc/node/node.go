@@ -50,62 +50,98 @@ func (n *Node) ID() string {
 	return n.nodeID
 }
 
-func (n *Node) CreateKeygenSession(_ types.KeyType, walletID string, threshold int, successQueue messaging.MessageQueue) (session.Session, error) {
+func (n *Node) CreateKeygenSession(keyType types.KeyType, walletID string, threshold int, successQueue messaging.MessageQueue) (session.Session, error) {
 	if n.peerRegistry.GetReadyPeersCount() < int64(threshold+1) {
 		return nil, fmt.Errorf("not enough peers to create gen session! expected %d, got %d", threshold+1, n.peerRegistry.GetReadyPeersCount())
 	}
 
 	readyPeerIDs := n.peerRegistry.GetReadyPeersIncludeSelf()
 	selfPartyID, allPartyIDs := n.generatePartyIDs("keygen", readyPeerIDs)
-	preparams, err := n.getECDSAPreParams(false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get preparams: %w", err)
+	switch keyType {
+	case types.KeyTypeSecp256k1:
+		preparams, err := n.getECDSAPreParams(false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get preparams: %w", err)
+		}
+		logger.Info("Preparams loaded")
+
+		ecdsaSession := session.NewECDSASession(
+			walletID,
+			selfPartyID,
+			allPartyIDs,
+			threshold,
+			*preparams,
+			n.pubSub,
+			n.direct,
+			n.identityStore,
+			n.kvstore,
+			n.keyinfoStore,
+		)
+
+		return ecdsaSession, nil
+	case types.KeyTypeEd25519:
+		eddsaSession := session.NewEDDSASession(
+			walletID,
+			selfPartyID,
+			allPartyIDs,
+			threshold,
+			n.pubSub,
+			n.direct,
+			n.identityStore,
+			n.kvstore,
+			n.keyinfoStore,
+		)
+		return eddsaSession, nil
+	default:
+		return nil, fmt.Errorf("invalid key type: %s", keyType)
 	}
-	logger.Info("Preparams loaded")
-
-	ecdsaSession := session.NewECDSASession(
-		walletID,
-		selfPartyID,
-		allPartyIDs,
-		threshold,
-		*preparams,
-		n.pubSub,
-		n.direct,
-		n.identityStore,
-		n.kvstore,
-		n.keyinfoStore,
-	)
-
-	return ecdsaSession, nil
 }
 
-func (n *Node) CreateSigningSession(_ types.KeyType, walletID string, txID string, threshold int, successQueue messaging.MessageQueue) (session.Session, error) {
+func (n *Node) CreateSigningSession(keyType types.KeyType, walletID string, txID string, threshold int, successQueue messaging.MessageQueue) (session.Session, error) {
 	if n.peerRegistry.GetReadyPeersCount() < int64(threshold+1) {
 		return nil, fmt.Errorf("not enough peers to create gen session! expected %d, got %d", threshold+1, n.peerRegistry.GetReadyPeersCount())
 	}
 
 	readyPeerIDs := n.peerRegistry.GetReadyPeersIncludeSelf()
 	selfPartyID, allPartyIDs := n.generatePartyIDs("keygen", readyPeerIDs)
-	ecdsaSession := session.NewECDSASession(
-		walletID,
-		selfPartyID,
-		allPartyIDs,
-		threshold,
-		keygen.LocalPreParams{},
-		n.pubSub,
-		n.direct,
-		n.identityStore,
-		n.kvstore,
-		n.keyinfoStore,
-	)
-	saveData, err := ecdsaSession.GetSaveData()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get save data: %w", err)
+	switch keyType {
+	case types.KeyTypeSecp256k1:
+		ecdsaSession := session.NewECDSASession(
+			walletID,
+			selfPartyID,
+			allPartyIDs,
+			threshold,
+			keygen.LocalPreParams{},
+			n.pubSub,
+			n.direct,
+			n.identityStore,
+			n.kvstore,
+			n.keyinfoStore,
+		)
+		saveData, err := ecdsaSession.GetSaveData()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get save data: %w", err)
+		}
+
+		ecdsaSession.SetSaveData(saveData)
+
+		return ecdsaSession, nil
+	case types.KeyTypeEd25519:
+		eddsaSession := session.NewEDDSASession(
+			walletID,
+			selfPartyID,
+			allPartyIDs,
+			threshold,
+			n.pubSub,
+			n.direct,
+			n.identityStore,
+			n.kvstore,
+			n.keyinfoStore,
+		)
+		return eddsaSession, nil
+	default:
+		return nil, fmt.Errorf("invalid key type: %s", keyType)
 	}
-
-	ecdsaSession.SetSaveData(saveData)
-
-	return ecdsaSession, nil
 }
 
 func (n *Node) GetReadyPeersIncludeSelf() []string {

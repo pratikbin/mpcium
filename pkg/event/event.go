@@ -5,6 +5,7 @@ const (
 	ResharingSuccessEventTopic = "mpc.mpc_resharing_success.*"
 
 	TypeGenerateWalletSuccess = "mpc.mpc_keygen_success.%s"
+	TypeSigningResultComplete = "mpc.mpc_signing_result_complete.%s.%s"
 )
 
 type KeygenSuccessEvent struct {
