@@ -117,51 +117,76 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		}
 
 		walletID := msg.WalletID
-		session, err := ec.node.CreateKeygenSession(types.KeyTypeSecp256k1, walletID, ec.mpcThreshold, ec.genKeySucecssQueue)
+		ecdsaSession, err := ec.node.CreateKeygenSession(types.KeyTypeSecp256k1, walletID, ec.mpcThreshold, ec.genKeySucecssQueue)
+		if err != nil {
+			logger.Error("Failed to create key generation session", err, "walletID", walletID)
+			return
+		}
+
+		eddsaSession, err := ec.node.CreateKeygenSession(types.KeyTypeEd25519, walletID, ec.mpcThreshold, ec.genKeySucecssQueue)
 		if err != nil {
 			logger.Error("Failed to create key generation session", err, "walletID", walletID)
 			return
 		}
 
 		// Start listening for messages first
-		go session.Listen(ec.node.ID())
+		go ecdsaSession.Listen(ec.node.ID())
+		go eddsaSession.Listen(ec.node.ID())
+		successEvent := &event.KeygenSuccessEvent{
+			WalletID: walletID,
+		}
 
-		// Start the key generation process
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-			session.StartKeygen(ctx, session.Send, func(data []byte) {
-				cancel()
-				session.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, false, data)
-
-				successEvent := &event.KeygenSuccessEvent{
-					WalletID:    walletID,
-					ECDSAPubKey: session.GetPublicKey(data),
-				}
-
-				successEventBytes, err := json.Marshal(successEvent)
-				if err != nil {
-					logger.Error("Failed to marshal keygen success event", err)
-					return
-				}
-
-				err = ec.genKeySucecssQueue.Enqueue(event.KeygenSuccessEventTopic, successEventBytes, &messaging.EnqueueOptions{
-					IdempotententKey: fmt.Sprintf(event.TypeGenerateWalletSuccess, walletID),
-				})
-				if err != nil {
-					logger.Error("Failed to publish key generation success message", err)
-					return
-				}
-				logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", walletID, "data", len(data))
-			})
-		}()
+		var wg sync.WaitGroup
+		wg.Add(2)
 
 		// Handle errors from the session
 		go func() {
-			for err := range session.ErrCh() {
-				logger.Error("Error from session", err)
-				return
+			for {
+				select {
+				case err := <-ecdsaSession.ErrCh():
+					logger.Error("Error from ECDSA session", err)
+					return
+				case err := <-eddsaSession.ErrCh():
+					logger.Error("Error from EDDSA session", err)
+					return
+				}
 			}
 		}()
+
+		// Start the key generation process
+		ecdsaCtx, ecdsaCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		go ecdsaSession.StartKeygen(ecdsaCtx, ecdsaSession.Send, func(data []byte) {
+			ecdsaCancel()
+			ecdsaSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, false, data)
+			successEvent.ECDSAPubKey = ecdsaSession.GetPublicKey(data)
+			wg.Done()
+		})
+
+		eddsaCtx, eddsaCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		go eddsaSession.StartKeygen(eddsaCtx, eddsaSession.Send, func(data []byte) {
+			eddsaCancel()
+			eddsaSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, false, data)
+			successEvent.EDDSAPubKey = eddsaSession.GetPublicKey(data)
+			wg.Done()
+		})
+
+		wg.Wait()
+
+		// Marshal the success event
+		successEventBytes, err := json.Marshal(successEvent)
+		if err != nil {
+			logger.Error("Failed to marshal keygen success event", err)
+			return
+		}
+
+		err = ec.genKeySucecssQueue.Enqueue(event.KeygenSuccessEventTopic, successEventBytes, &messaging.EnqueueOptions{
+			IdempotententKey: event.KeygenSuccessEventTopic,
+		})
+		if err != nil {
+			logger.Error("Failed to publish key generation success message", err)
+			return
+		}
+		logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", walletID)
 	})
 
 	ec.keyGenerationSub = sub
@@ -246,7 +271,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				}
 
 				err = ec.signingResultQueue.Enqueue(event.SigningResultCompleteTopic, signingResultBytes, &messaging.EnqueueOptions{
-					IdempotententKey: event.SigningResultCompleteTopic,
+					IdempotententKey: fmt.Sprintf(event.TypeSigningResultComplete, msg.WalletID, msg.TxID),
 				})
 				if err != nil {
 					logger.Error("Failed to publish signing result event", err)

@@ -30,7 +30,7 @@ func main() {
 
 	mpcClient := client.NewMPCClient(client.Options{
 		NatsConn: natsConn,
-		KeyPath:  "/home/viet/Documents/other/mpcium/event_initiator.key",
+		KeyPath:  "./../../event_initiator.key",
 	})
 
 	// 2) Once wallet exists, immediately fire a SignTransaction
@@ -39,7 +39,7 @@ func main() {
 
 	txMsg := &types.SignTxMessage{
 		KeyType:             types.KeyTypeSecp256k1,
-		WalletID:            "0bf609ad-63ed-4713-a673-e09d43f316d3",
+		WalletID:            "9af13a60-9aa9-4069-ba3f-bd6d821c8905",
 		NetworkInternalCode: "ethereum-sepolia",
 		TxID:                txID,
 		Tx:                  dummyTx,

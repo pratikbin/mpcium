@@ -20,7 +20,7 @@ type EDDSAParty struct {
 	saveData      *keygen.LocalPartySaveData
 }
 
-func NewEDDASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int,
+func NewEDDAParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int,
 	reshareParams *tss.ReSharingParameters, saveData *keygen.LocalPartySaveData, errCh chan error) *EDDSAParty {
 	return &EDDSAParty{
 		party:         *NewParty(walletID, partyID, partyIDs, threshold, errCh),
@@ -43,8 +43,8 @@ func (s *EDDSAParty) SetSaveData(saveData []byte) {
 }
 
 func (s *EDDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
-	end := make(chan *keygen.LocalPartySaveData)
-	params := tss.NewParameters(tss.S256(), tss.NewPeerContext(s.partyIDs), s.partyID, len(s.partyIDs), s.threshold)
+	end := make(chan *keygen.LocalPartySaveData, 1)
+	params := tss.NewParameters(tss.Edwards(), tss.NewPeerContext(s.partyIDs), s.partyID, len(s.partyIDs), s.threshold)
 	party := keygen.NewLocalParty(params, s.outCh, end)
 	runParty(s, ctx, party, send, end, finish)
 }
@@ -54,8 +54,8 @@ func (s *EDDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(t
 		s.ErrCh() <- errors.New("save data is nil")
 		return
 	}
-	end := make(chan *common.SignatureData)
-	params := tss.NewParameters(tss.S256(), tss.NewPeerContext(s.partyIDs), s.partyID, len(s.partyIDs), s.threshold)
+	end := make(chan *common.SignatureData, 1)
+	params := tss.NewParameters(tss.Edwards(), tss.NewPeerContext(s.partyIDs), s.partyID, len(s.partyIDs), s.threshold)
 	party := signing.NewLocalParty(msg, params, *s.saveData, s.outCh, end)
 	runParty(s, ctx, party, send, end, finish)
 }
@@ -66,9 +66,9 @@ func (s *EDDSAParty) StartReshare(ctx context.Context, oldPartyIDs, newPartyIDs 
 		s.ErrCh() <- errors.New("save data is nil")
 		return
 	}
-	end := make(chan *keygen.LocalPartySaveData)
+	end := make(chan *keygen.LocalPartySaveData, 1)
 	params := tss.NewReSharingParameters(
-		tss.S256(),
+		tss.Edwards(),
 		tss.NewPeerContext(oldPartyIDs),
 		tss.NewPeerContext(newPartyIDs),
 		s.partyID,

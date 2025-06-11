@@ -45,7 +45,7 @@ type Session interface {
 
 	GetSaveData() ([]byte, error)
 	GetPublicKey(data []byte) []byte
-	VerifySignature(msg []byte, signature []byte) (common.SignatureData, error)
+	VerifySignature(msg []byte, signature []byte) (*common.SignatureData, error)
 
 	Send(msg tss.Message)
 	Listen(nodeID string)
