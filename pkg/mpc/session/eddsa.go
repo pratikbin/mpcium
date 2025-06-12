@@ -53,11 +53,19 @@ func (s *EDDSASession) StartSigning(ctx context.Context, msg *big.Int, send func
 	s.party.StartSigning(ctx, msg, send, finish)
 }
 
-func (s *EDDSASession) GetPublicKey(data []byte) []byte {
+func (s *EDDSASession) StartResharing(ctx context.Context, oldPartyIDs []*tss.PartyID, newPartyIDs []*tss.PartyID, oldThreshold int, newThreshold int, send func(tss.Message), finish func([]byte)) {
+	s.party.StartResharing(ctx, oldPartyIDs, newPartyIDs, oldThreshold, newThreshold, send, finish)
+}
+
+func (s *EDDSASession) GetPublicKey(data []byte) ([]byte, error) {
 	saveData := &keygen.LocalPartySaveData{}
 	err := json.Unmarshal(data, saveData)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("failed to unmarshal save data: %w", err)
+	}
+
+	if saveData.EDDSAPub == nil {
+		return nil, errors.New("EDDSA public key is nil")
 	}
 
 	publicKey := saveData.EDDSAPub
@@ -68,7 +76,7 @@ func (s *EDDSASession) GetPublicKey(data []byte) []byte {
 	}
 
 	pubKeyBytes := pubKey.SerializeCompressed()
-	return pubKeyBytes
+	return pubKeyBytes, nil
 }
 
 func (s *EDDSASession) VerifySignature(msg []byte, signature []byte) (*common.SignatureData, error) {

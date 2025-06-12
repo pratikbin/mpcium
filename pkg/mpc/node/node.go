@@ -63,8 +63,6 @@ func (n *Node) CreateKeygenSession(keyType types.KeyType, walletID string, thres
 		if err != nil {
 			return nil, fmt.Errorf("failed to get preparams: %w", err)
 		}
-		logger.Info("Preparams loaded")
-
 		ecdsaSession := session.NewECDSASession(
 			walletID,
 			selfPartyID,
@@ -152,23 +150,65 @@ func (n *Node) CreateSigningSession(keyType types.KeyType, walletID string, txID
 	}
 }
 
+func (n *Node) CreateResharingSession(isOldParty bool, keyType types.KeyType, walletID string, threshold int, successQueue messaging.MessageQueue) (session.Session, error) {
+	if n.peerRegistry.GetReadyPeersCount() < int64(threshold+1) {
+		return nil, fmt.Errorf("not enough peers to create resharing session! expected %d, got %d", threshold+1, n.peerRegistry.GetReadyPeersCount())
+	}
+	readyPeerIDs := n.peerRegistry.GetReadyPeersIncludeSelf()
+	var selfPartyID *tss.PartyID
+	var partyIDs []*tss.PartyID
+	if isOldParty {
+		selfPartyID, partyIDs = n.generatePartyIDs("keygen", readyPeerIDs)
+	} else {
+		selfPartyID, partyIDs = n.generatePartyIDs("resharing", readyPeerIDs)
+	}
+
+	switch keyType {
+	case types.KeyTypeSecp256k1:
+		preparams, err := n.getECDSAPreParams(isOldParty)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get preparams: %w", err)
+		}
+		ecdsaSession := session.NewECDSASession(walletID, selfPartyID, partyIDs, threshold, *preparams, n.pubSub, n.direct, n.identityStore, n.kvstore, n.keyinfoStore)
+		saveData, err := ecdsaSession.GetSaveData()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get save data: %w", err)
+		}
+		ecdsaSession.SetSaveData(saveData)
+		return ecdsaSession, nil
+	case types.KeyTypeEd25519:
+		eddsaSession := session.NewEDDSASession(walletID, selfPartyID, partyIDs, threshold, n.pubSub, n.direct, n.identityStore, n.kvstore, n.keyinfoStore)
+		saveData, err := eddsaSession.GetSaveData()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get save data: %w", err)
+		}
+		eddsaSession.SetSaveData(saveData)
+		return eddsaSession, nil
+	default:
+		return nil, fmt.Errorf("invalid key type: %s", keyType)
+	}
+}
+
 func (n *Node) GetReadyPeersIncludeSelf() []string {
 	return n.peerRegistry.GetReadyPeersIncludeSelf()
 }
 
 func (n *Node) generatePartyIDs(purpose string, readyPeerIDs []string) (self *tss.PartyID, all []*tss.PartyID) {
-	var selfPartyID *tss.PartyID
-	partyIDs := make([]*tss.PartyID, len(readyPeerIDs))
-	for i, peerID := range readyPeerIDs {
+	// Pre-allocate slice with exact size needed
+	partyIDs := make([]*tss.PartyID, 0, len(readyPeerIDs))
+
+	// Create all party IDs in one pass
+	for _, peerID := range readyPeerIDs {
+		partyID := createPartyID(peerID, purpose)
 		if peerID == n.nodeID {
-			selfPartyID = createPartyID(peerID, purpose)
-			partyIDs[i] = selfPartyID
-		} else {
-			partyIDs[i] = createPartyID(peerID, purpose)
+			self = partyID
 		}
+		partyIDs = append(partyIDs, partyID)
 	}
-	allPartyIDs := tss.SortPartyIDs(partyIDs, 0)
-	return selfPartyID, allPartyIDs
+
+	// Sort party IDs in place
+	all = tss.SortPartyIDs(partyIDs, 0)
+	return
 }
 
 func (n *Node) getECDSAPreParams(isOldParty bool) (*keygen.LocalPreParams, error) {
@@ -180,11 +220,8 @@ func (n *Node) getECDSAPreParams(isOldParty bool) (*keygen.LocalPreParams, error
 	}
 
 	preparamsBytes, _ := n.kvstore.Get(path)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
 	if preparamsBytes == nil {
+		logger.Info("Generating preparams", "isOldParty", isOldParty)
 		preparams, err := keygen.GeneratePreParams(5 * time.Minute)
 		if err != nil {
 			return nil, err
@@ -201,6 +238,7 @@ func (n *Node) getECDSAPreParams(isOldParty bool) (*keygen.LocalPreParams, error
 	if err := json.Unmarshal(preparamsBytes, &preparams); err != nil {
 		return nil, err
 	}
+	logger.Info("Preparams loaded", "isOldParty", isOldParty)
 	return &preparams, nil
 }
 

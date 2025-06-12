@@ -25,7 +25,7 @@ type ECDSASession struct {
 
 func NewECDSASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int, preParams keygen.LocalPreParams, pubSub messaging.PubSub, direct messaging.DirectMessaging, identityStore identity.Store, kvstore kvstore.KVStore, keyinfoStore keyinfo.Store) *ECDSASession {
 	s := NewSession(CurveSecp256k1, PurposeKeygen, walletID, pubSub, direct, identityStore, kvstore, keyinfoStore)
-	s.party = party.NewECDSAParty(walletID, partyID, partyIDs, threshold, preParams, nil, s.errCh)
+	s.party = party.NewECDSAParty(walletID, partyID, partyIDs, threshold, preParams, s.errCh)
 	s.topicComposer = &TopicComposer{
 		ComposeBroadcastTopic: func() string {
 			return fmt.Sprintf("keygen:broadcast:ecdsa:%s", walletID)
@@ -54,13 +54,16 @@ func (s *ECDSASession) StartSigning(ctx context.Context, msg *big.Int, send func
 	s.party.StartSigning(ctx, msg, send, finish)
 }
 
-func (s *ECDSASession) GetPublicKey(data []byte) []byte {
+func (s *ECDSASession) StartResharing(ctx context.Context, oldPartyIDs []*tss.PartyID, newPartyIDs []*tss.PartyID, oldThreshold int, newThreshold int, send func(tss.Message), finish func([]byte)) {
+	s.party.StartResharing(ctx, oldPartyIDs, newPartyIDs, oldThreshold, newThreshold, send, finish)
+}
+
+func (s *ECDSASession) GetPublicKey(data []byte) ([]byte, error) {
 	saveData := &keygen.LocalPartySaveData{}
 	err := json.Unmarshal(data, saveData)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("failed to unmarshal save data: %w", err)
 	}
-
 	publicKey := saveData.ECDSAPub
 	pubKey := &ecdsa.PublicKey{
 		Curve: publicKey.Curve(),
@@ -69,9 +72,9 @@ func (s *ECDSASession) GetPublicKey(data []byte) []byte {
 	}
 	pubKeyBytes, err := encoding.EncodeS256PubKey(pubKey)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("failed to encode public key: %w", err)
 	}
-	return pubKeyBytes
+	return pubKeyBytes, nil
 }
 
 func (s *ECDSASession) VerifySignature(msg []byte, signature []byte) (*common.SignatureData, error) {
