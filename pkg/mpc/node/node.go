@@ -170,11 +170,22 @@ func (n *Node) CreateResharingSession(isOldParty bool, keyType types.KeyType, wa
 			return nil, fmt.Errorf("failed to get preparams: %w", err)
 		}
 		ecdsaSession := session.NewECDSASession(walletID, selfPartyID, partyIDs, threshold, *preparams, n.pubSub, n.direct, n.identityStore, n.kvstore, n.keyinfoStore)
-		saveData, err := ecdsaSession.GetSaveData()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get save data: %w", err)
+		if isOldParty {
+			saveData, err := ecdsaSession.GetSaveData()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get save data: %w", err)
+			}
+			ecdsaSession.SetSaveData(saveData)
+		} else {
+			// Initialize new save data for new parties
+			saveData := keygen.NewLocalPartySaveData(len(partyIDs))
+			saveData.LocalPreParams = *preparams
+			saveDataBytes, err := json.Marshal(saveData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal save data: %w", err)
+			}
+			ecdsaSession.SetSaveData(saveDataBytes)
 		}
-		ecdsaSession.SetSaveData(saveData)
 		return ecdsaSession, nil
 	case types.KeyTypeEd25519:
 		eddsaSession := session.NewEDDSASession(walletID, selfPartyID, partyIDs, threshold, n.pubSub, n.direct, n.identityStore, n.kvstore, n.keyinfoStore)

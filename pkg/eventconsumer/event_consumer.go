@@ -337,6 +337,7 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 			logger.Error("Failed to verify initiator message", err)
 			return
 		}
+
 		oldSession, err := ec.node.CreateResharingSession(
 			true,
 			msg.KeyType,
@@ -394,8 +395,14 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 		newCtx, newCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		go newSession.StartResharing(newCtx, oldSession.PartyIDs(), newSession.PartyIDs(), ec.mpcThreshold, msg.NewThreshold, newSession.Send, func(data []byte) {
 			newCancel()
-			newSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, true, data)
-			ecdsaPubKey, err := newSession.GetPublicKey(data)
+			// Rebuild the save data for and attach to old session
+			subsetData, err := newSession.BuildLocalSaveDataSubset(data, oldSession.PartyIDs())
+			if err != nil {
+				logger.Error("Failed to build local save data subset", err)
+				return
+			}
+			newSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), msg.NewThreshold, true, subsetData)
+			ecdsaPubKey, err := newSession.GetPublicKey(subsetData)
 			if err != nil {
 				logger.Error("Failed to get ECDSA public key", err)
 				return
@@ -419,6 +426,7 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 			logger.Error("Failed to publish resharing result event", err)
 			return
 		}
+		logger.Info("[COMPLETED RESH] Resharing completed successfully", "walletID", msg.WalletID)
 	})
 
 	ec.resharingSub = sub

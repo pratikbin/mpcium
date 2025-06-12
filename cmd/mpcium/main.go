@@ -87,11 +87,11 @@ func runNode(ctx context.Context, c *cli.Command) error {
 	nodeName := c.String("name")
 	decryptPrivateKey := c.Bool("decrypt-private-key")
 	usePrompts := c.Bool("prompt-credentials")
-	// debug := c.Bool("debug")
+	debug := c.Bool("debug")
 
 	config.InitViperConfig()
 	environment := viper.GetString("environment")
-	logger.Init(environment, true)
+	logger.Init(environment, debug)
 
 	// Handle configuration based on prompt flag
 	if usePrompts {
