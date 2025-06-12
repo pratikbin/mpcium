@@ -23,9 +23,10 @@ type party struct {
 type PartyInterface interface {
 	StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte))
 	StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte))
-	StartReshare(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID, oldThreshold, newThreshold int, send func(tss.Message), finish func([]byte))
+	StartResharing(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID, oldThreshold, newThreshold int, send func(tss.Message), finish func([]byte))
 
 	PartyID() *tss.PartyID
+	PartyIDs() []*tss.PartyID
 	GetSaveData() []byte
 	SetSaveData(saveData []byte)
 	InCh() chan types.TssMessage
@@ -41,6 +42,10 @@ func NewParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, th
 
 func (p *party) PartyID() *tss.PartyID {
 	return p.partyID
+}
+
+func (p *party) PartyIDs() []*tss.PartyID {
+	return p.partyIDs
 }
 
 func (p *party) InCh() chan types.TssMessage {

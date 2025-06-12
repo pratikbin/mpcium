@@ -42,13 +42,14 @@ type KeyComposerFn func(id string) string
 type Session interface {
 	StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte))
 	StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte))
-
+	StartResharing(ctx context.Context, oldPartyIDs []*tss.PartyID, newPartyIDs []*tss.PartyID, oldThreshold int, newThreshold int, send func(tss.Message), finish func([]byte))
 	GetSaveData() ([]byte, error)
-	GetPublicKey(data []byte) []byte
+	GetPublicKey(data []byte) ([]byte, error)
 	VerifySignature(msg []byte, signature []byte) (*common.SignatureData, error)
 
+	PartyIDs() []*tss.PartyID
 	Send(msg tss.Message)
-	Listen(nodeID string)
+	Listen(nodeID string, isResharing bool)
 	SaveKey(participantPeerIDs []string, threshold int, isReshared bool, data []byte) (err error)
 	ErrCh() chan error
 }
@@ -94,7 +95,9 @@ func NewSession(
 		errCh:         errCh,
 	}
 }
-
+func (s *session) PartyIDs() []*tss.PartyID {
+	return s.party.PartyIDs()
+}
 func (s *session) ErrCh() chan error {
 	return s.errCh
 }
@@ -174,7 +177,13 @@ func (s *session) receive(rawMsg []byte) {
 	}
 }
 
-func (s *session) Listen(nodeID string) {
+func (s *session) Listen(nodeID string, isResharingParty bool) {
+	var directTopic string
+	if isResharingParty {
+		directTopic = s.topicComposer.ComposeDirectTopic(fmt.Sprintf("%s:%s", nodeID, "resharing"))
+	} else {
+		directTopic = s.topicComposer.ComposeDirectTopic(fmt.Sprintf("%s:%s", nodeID, "keygen"))
+	}
 	broadcast := func() {
 		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(natMsg *nats.Msg) {
 			msg := natMsg.Data
@@ -190,7 +199,7 @@ func (s *session) Listen(nodeID string) {
 	}
 
 	direct := func() {
-		sub, err := s.direct.Listen(s.topicComposer.ComposeDirectTopic(fmt.Sprintf("%s:%s", nodeID, "keygen")), func(msg []byte) {
+		sub, err := s.direct.Listen(directTopic, func(msg []byte) {
 			s.receive(msg)
 		})
 

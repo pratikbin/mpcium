@@ -70,7 +70,7 @@ func (s *EDDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(t
 	runParty(s, ctx, party, send, end, finish)
 }
 
-func (s *EDDSAParty) StartReshare(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID,
+func (s *EDDSAParty) StartResharing(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID,
 	oldThreshold, newThreshold int, send func(tss.Message), finish func([]byte)) {
 	if s.saveData == nil {
 		s.ErrCh() <- errors.New("save data is nil")

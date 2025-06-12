@@ -16,17 +16,15 @@ import (
 
 type ECDSAParty struct {
 	party
-	preParams     keygen.LocalPreParams
-	reshareParams *tss.ReSharingParameters
-	saveData      *keygen.LocalPartySaveData
+	preParams keygen.LocalPreParams
+	saveData  *keygen.LocalPartySaveData
 }
 
 func NewECDSAParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int,
-	preParams keygen.LocalPreParams, reshareParams *tss.ReSharingParameters, errCh chan error) *ECDSAParty {
+	preParams keygen.LocalPreParams, errCh chan error) *ECDSAParty {
 	return &ECDSAParty{
-		party:         *NewParty(walletID, partyID, partyIDs, threshold, errCh),
-		preParams:     preParams,
-		reshareParams: reshareParams,
+		party:     *NewParty(walletID, partyID, partyIDs, threshold, errCh),
+		preParams: preParams,
 	}
 }
 
@@ -71,7 +69,7 @@ func (s *ECDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(t
 	runParty(s, ctx, party, send, end, finish)
 }
 
-func (s *ECDSAParty) StartReshare(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID,
+func (s *ECDSAParty) StartResharing(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID,
 	oldThreshold, newThreshold int, send func(tss.Message), finish func([]byte)) {
 	if s.saveData == nil {
 		s.ErrCh() <- errors.New("save data is nil")
@@ -84,8 +82,8 @@ func (s *ECDSAParty) StartReshare(ctx context.Context, oldPartyIDs, newPartyIDs 
 		tss.NewPeerContext(newPartyIDs),
 		s.partyID,
 		len(oldPartyIDs),
-		len(newPartyIDs),
 		oldThreshold,
+		len(newPartyIDs),
 		newThreshold,
 	)
 	party := resharing.NewLocalParty(params, *s.saveData, s.outCh, end)
