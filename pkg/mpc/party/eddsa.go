@@ -45,10 +45,6 @@ func (s *EDDSAParty) SetSaveData(shareData []byte) {
 		s.ErrCh() <- fmt.Errorf("failed deserializing shares: %w", err)
 		return
 	}
-	localSaveData.EDDSAPub.SetCurve(tss.Edwards())
-	for _, xj := range localSaveData.BigXj {
-		xj.SetCurve(tss.Edwards())
-	}
 	s.saveData = &localSaveData
 }
 

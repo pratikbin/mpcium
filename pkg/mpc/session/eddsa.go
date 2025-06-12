@@ -41,10 +41,6 @@ func NewEDDSASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.Part
 	}
 }
 
-func (s *EDDSASession) SetSaveData(saveBytes []byte) {
-	s.party.SetSaveData(saveBytes)
-}
-
 func (s *EDDSASession) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
 	s.party.StartKeygen(ctx, send, finish)
 }
@@ -119,4 +115,13 @@ func (s *EDDSASession) VerifySignature(msg []byte, signature []byte) (*common.Si
 	}
 
 	return signatureData, nil
+}
+
+func (s *EDDSASession) BuildLocalSaveDataSubset(sourceData []byte, sortedIDs tss.SortedPartyIDs) ([]byte, error) {
+	saveData := &keygen.LocalPartySaveData{}
+	err := json.Unmarshal(sourceData, saveData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal save data: %w", err)
+	}
+	return json.Marshal(keygen.BuildLocalSaveDataSubset(*saveData, sortedIDs))
 }

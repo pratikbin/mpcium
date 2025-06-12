@@ -43,10 +43,12 @@ type Session interface {
 	StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte))
 	StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte))
 	StartResharing(ctx context.Context, oldPartyIDs []*tss.PartyID, newPartyIDs []*tss.PartyID, oldThreshold int, newThreshold int, send func(tss.Message), finish func([]byte))
+
 	GetSaveData() ([]byte, error)
 	GetPublicKey(data []byte) ([]byte, error)
 	VerifySignature(msg []byte, signature []byte) (*common.SignatureData, error)
 
+	BuildLocalSaveDataSubset(sourceData []byte, sortedIDs tss.SortedPartyIDs) ([]byte, error)
 	PartyIDs() []*tss.PartyID
 	Send(msg tss.Message)
 	Listen(nodeID string, isResharing bool)
@@ -95,9 +97,11 @@ func NewSession(
 		errCh:         errCh,
 	}
 }
+
 func (s *session) PartyIDs() []*tss.PartyID {
 	return s.party.PartyIDs()
 }
+
 func (s *session) ErrCh() chan error {
 	return s.errCh
 }
@@ -140,40 +144,6 @@ func (s *session) Send(msg tss.Message) {
 				return
 			}
 		}
-	}
-}
-
-func (s *session) receive(rawMsg []byte) {
-	msg, err := types.UnmarshalTssMessage(rawMsg)
-	if err != nil {
-		s.errCh <- fmt.Errorf("failed to unmarshal message: %w", err)
-		return
-	}
-
-	err = s.identityStore.VerifyMessage(msg)
-	if err != nil {
-		s.errCh <- fmt.Errorf("failed to verify message: %w", err)
-		return
-	}
-
-	// Skip messages from self
-	if msg.From.String() == s.party.PartyID().String() {
-		return
-	}
-
-	toIDs := make([]string, len(msg.To))
-	for i, id := range msg.To {
-		toIDs[i] = id.String()
-	}
-
-	isBroadcast := msg.IsBroadcast && len(msg.To) == 0
-	isToSelf := slices.Contains(toIDs, s.party.PartyID().String())
-
-	if isBroadcast || isToSelf {
-		logger.Debug("Received message", "from", msg.From, "to", msg.To, "isBroadcast", msg.IsBroadcast, "isToSelf", isToSelf)
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		s.party.InCh() <- *msg
 	}
 }
 
@@ -228,6 +198,9 @@ func (s *session) SaveKey(participantPeerIDs []string, threshold int, isReshared
 		return
 	}
 
+	fmt.Printf("key info: %+v\n", keyInfo)
+	fmt.Printf("compose key: %s\n", composeKey)
+
 	err = s.kvstore.Put(composeKey, data)
 	if err != nil {
 		s.errCh <- fmt.Errorf("failed to save key: %w", err)
@@ -237,6 +210,10 @@ func (s *session) SaveKey(participantPeerIDs []string, threshold int, isReshared
 	return nil
 }
 
+func (s *session) SetSaveData(saveBytes []byte) {
+	s.party.SetSaveData(saveBytes)
+}
+
 func (s *session) GetSaveData() ([]byte, error) {
 	composeKey := s.composeKey(s.walletID)
 	data, err := s.kvstore.Get(composeKey)
@@ -244,4 +221,38 @@ func (s *session) GetSaveData() ([]byte, error) {
 		return nil, fmt.Errorf("failed to get key: %w", err)
 	}
 	return data, nil
+}
+
+func (s *session) receive(rawMsg []byte) {
+	msg, err := types.UnmarshalTssMessage(rawMsg)
+	if err != nil {
+		s.errCh <- fmt.Errorf("failed to unmarshal message: %w", err)
+		return
+	}
+
+	err = s.identityStore.VerifyMessage(msg)
+	if err != nil {
+		s.errCh <- fmt.Errorf("failed to verify message: %w", err)
+		return
+	}
+
+	// Skip messages from self
+	if msg.From.String() == s.party.PartyID().String() {
+		return
+	}
+
+	toIDs := make([]string, len(msg.To))
+	for i, id := range msg.To {
+		toIDs[i] = id.String()
+	}
+
+	isBroadcast := msg.IsBroadcast && len(msg.To) == 0
+	isToSelf := slices.Contains(toIDs, s.party.PartyID().String())
+
+	if isBroadcast || isToSelf {
+		logger.Debug("Received message", "from", msg.From, "to", msg.To, "isBroadcast", msg.IsBroadcast, "isToSelf", isToSelf)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.party.InCh() <- *msg
+	}
 }
