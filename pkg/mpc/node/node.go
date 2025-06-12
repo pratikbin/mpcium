@@ -138,6 +138,14 @@ func (n *Node) CreateSigningSession(keyType types.KeyType, walletID string, txID
 			n.kvstore,
 			n.keyinfoStore,
 		)
+
+		saveData, err := eddsaSession.GetSaveData()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get save data: %w", err)
+		}
+
+		eddsaSession.SetSaveData(saveData)
+
 		return eddsaSession, nil
 	default:
 		return nil, fmt.Errorf("invalid key type: %s", keyType)

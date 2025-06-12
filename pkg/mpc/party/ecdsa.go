@@ -40,8 +40,8 @@ func (s *ECDSAParty) GetSaveData() []byte {
 }
 
 func (s *ECDSAParty) SetSaveData(saveData []byte) {
-	localSaveData := &keygen.LocalPartySaveData{}
-	err := json.Unmarshal(saveData, localSaveData)
+	var localSaveData keygen.LocalPartySaveData
+	err := json.Unmarshal(saveData, &localSaveData)
 	if err != nil {
 		s.ErrCh() <- fmt.Errorf("failed deserializing shares: %w", err)
 		return
@@ -50,7 +50,7 @@ func (s *ECDSAParty) SetSaveData(saveData []byte) {
 	for _, xj := range localSaveData.BigXj {
 		xj.SetCurve(tss.S256())
 	}
-	s.saveData = localSaveData
+	s.saveData = &localSaveData
 }
 
 func (s *ECDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
