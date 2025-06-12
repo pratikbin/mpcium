@@ -38,8 +38,18 @@ func (s *EDDSAParty) GetSaveData() []byte {
 	return saveData
 }
 
-func (s *EDDSAParty) SetSaveData(saveData []byte) {
-	// s.saveData = saveData.(*keygen.LocalPartySaveData)
+func (s *EDDSAParty) SetSaveData(shareData []byte) {
+	var localSaveData keygen.LocalPartySaveData
+	err := json.Unmarshal(shareData, &localSaveData)
+	if err != nil {
+		s.ErrCh() <- fmt.Errorf("failed deserializing shares: %w", err)
+		return
+	}
+	localSaveData.EDDSAPub.SetCurve(tss.Edwards())
+	for _, xj := range localSaveData.BigXj {
+		xj.SetCurve(tss.Edwards())
+	}
+	s.saveData = &localSaveData
 }
 
 func (s *EDDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
