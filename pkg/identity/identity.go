@@ -265,5 +265,5 @@ func (s *fileStore) VerifyInitiatorMessage(msg types.InitiatorMessage) error {
 }
 
 func partyIDToNodeID(partyID *tss.PartyID) string {
-	return strings.Split(string(partyID.KeyInt().Bytes()), ":")[0]
+	return strings.Split(partyID.Moniker, ":")[0]
 }

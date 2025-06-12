@@ -125,10 +125,10 @@ func (s *session) Send(msg tss.Message) {
 		s.errCh <- fmt.Errorf("failed to marshal message: %w", err)
 		return
 	}
-
-	logger.Debug("Sending message", "from", routing.From, "to", routing.To, "isBroadcast", routing.IsBroadcast)
+	// fmt.Printf("Sending message from %s to %s isBroadcast %v\n", routing.From, routing.To, routing.IsBroadcast)
 
 	if routing.IsBroadcast && len(routing.To) == 0 {
+		fmt.Printf("sending broadcast message to %s\n", s.topicComposer.ComposeBroadcastTopic())
 		err := s.pubSub.Publish(s.topicComposer.ComposeBroadcastTopic(), msgBytes)
 		if err != nil {
 			s.errCh <- fmt.Errorf("failed to publish message: %w", err)
@@ -138,6 +138,7 @@ func (s *session) Send(msg tss.Message) {
 		for _, to := range routing.To {
 			nodeID := partyIDToNodeID(to)
 			topic := s.topicComposer.ComposeDirectTopic(nodeID)
+			fmt.Printf("sending direct message to %s\n", topic)
 			err := s.direct.Send(topic, msgBytes)
 			if err != nil {
 				s.errCh <- fmt.Errorf("failed to send message: %w", err)
@@ -155,6 +156,7 @@ func (s *session) Listen(nodeID string, isResharingParty bool) {
 		directTopic = s.topicComposer.ComposeDirectTopic(fmt.Sprintf("%s:%s", nodeID, "keygen"))
 	}
 	broadcast := func() {
+		fmt.Printf("subscribing to broadcast topic %s\n", s.topicComposer.ComposeBroadcastTopic())
 		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(natMsg *nats.Msg) {
 			msg := natMsg.Data
 			s.receive(msg)
@@ -169,6 +171,7 @@ func (s *session) Listen(nodeID string, isResharingParty bool) {
 	}
 
 	direct := func() {
+		fmt.Printf("subscribing to direct topic %s\n", directTopic)
 		sub, err := s.direct.Listen(directTopic, func(msg []byte) {
 			s.receive(msg)
 		})
@@ -197,9 +200,6 @@ func (s *session) SaveKey(participantPeerIDs []string, threshold int, isReshared
 		s.errCh <- fmt.Errorf("failed to save keyinfo: %w", err)
 		return
 	}
-
-	fmt.Printf("key info: %+v\n", keyInfo)
-	fmt.Printf("compose key: %s\n", composeKey)
 
 	err = s.kvstore.Put(composeKey, data)
 	if err != nil {

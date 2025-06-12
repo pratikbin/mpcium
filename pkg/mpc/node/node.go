@@ -204,24 +204,6 @@ func (n *Node) GetReadyPeersIncludeSelf() []string {
 	return n.peerRegistry.GetReadyPeersIncludeSelf()
 }
 
-func (n *Node) generatePartyIDs(purpose string, readyPeerIDs []string) (self *tss.PartyID, all []*tss.PartyID) {
-	// Pre-allocate slice with exact size needed
-	partyIDs := make([]*tss.PartyID, 0, len(readyPeerIDs))
-
-	// Create all party IDs in one pass
-	for _, peerID := range readyPeerIDs {
-		partyID := createPartyID(peerID, purpose)
-		if peerID == n.nodeID {
-			self = partyID
-		}
-		partyIDs = append(partyIDs, partyID)
-	}
-
-	// Sort party IDs in place
-	all = tss.SortPartyIDs(partyIDs, 0)
-	return
-}
-
 func (n *Node) getECDSAPreParams(isOldParty bool) (*keygen.LocalPreParams, error) {
 	var path string
 	if isOldParty {
@@ -253,8 +235,27 @@ func (n *Node) getECDSAPreParams(isOldParty bool) (*keygen.LocalPreParams, error
 	return &preparams, nil
 }
 
+func (n *Node) generatePartyIDs(purpose string, readyPeerIDs []string) (self *tss.PartyID, all []*tss.PartyID) {
+	// Pre-allocate slice with exact size needed
+	partyIDs := make([]*tss.PartyID, 0, len(readyPeerIDs))
+
+	// Create all party IDs in one pass
+	for _, peerID := range readyPeerIDs {
+		partyID := createPartyID(peerID, purpose)
+		if peerID == n.nodeID {
+			self = partyID
+		}
+		partyIDs = append(partyIDs, partyID)
+	}
+
+	// Sort party IDs in place
+	all = tss.SortPartyIDs(partyIDs, 0)
+	return
+}
+
 func createPartyID(nodeID string, label string) *tss.PartyID {
 	partyID := uuid.NewString()
-	key := big.NewInt(0).SetBytes([]byte(nodeID + ":" + label))
-	return tss.NewPartyID(partyID, label, key)
+	key := big.NewInt(0).SetBytes([]byte(partyID))
+	moniker := nodeID + ":" + label
+	return tss.NewPartyID(partyID, moniker, key)
 }
