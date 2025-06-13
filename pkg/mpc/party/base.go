@@ -10,16 +10,6 @@ import (
 	"github.com/fystack/mpcium/pkg/types"
 )
 
-type party struct {
-	walletID  string
-	threshold int
-	partyID   *tss.PartyID
-	partyIDs  []*tss.PartyID
-	inCh      chan types.TssMessage
-	outCh     chan tss.Message
-	errCh     chan error
-}
-
 type PartyInterface interface {
 	StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte))
 	StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte))
@@ -32,6 +22,16 @@ type PartyInterface interface {
 	InCh() chan types.TssMessage
 	OutCh() chan tss.Message
 	ErrCh() chan error
+}
+
+type party struct {
+	walletID  string
+	threshold int
+	partyID   *tss.PartyID
+	partyIDs  []*tss.PartyID
+	inCh      chan types.TssMessage
+	outCh     chan tss.Message
+	errCh     chan error
 }
 
 func NewParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int, errCh chan error) *party {

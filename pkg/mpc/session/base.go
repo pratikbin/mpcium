@@ -48,11 +48,10 @@ type Session interface {
 	GetPublicKey(data []byte) ([]byte, error)
 	VerifySignature(msg []byte, signature []byte) (*common.SignatureData, error)
 
-	BuildLocalSaveDataSubset(sourceData []byte, sortedIDs tss.SortedPartyIDs) ([]byte, error)
 	PartyIDs() []*tss.PartyID
 	Send(msg tss.Message)
 	Listen(nodeID string, isResharing bool)
-	SaveKey(participantPeerIDs []string, threshold int, isReshared bool, data []byte) (err error)
+	SaveKey(participantPeerIDs []string, threshold int, version int, data []byte) (err error)
 	ErrCh() chan error
 }
 
@@ -125,10 +124,9 @@ func (s *session) Send(msg tss.Message) {
 		s.errCh <- fmt.Errorf("failed to marshal message: %w", err)
 		return
 	}
-	// fmt.Printf("Sending message from %s to %s isBroadcast %v\n", routing.From, routing.To, routing.IsBroadcast)
+	logger.Debug("Sending message", "from", routing.From, "to", routing.To, "isBroadcast", routing.IsBroadcast)
 
 	if routing.IsBroadcast && len(routing.To) == 0 {
-		fmt.Printf("sending broadcast message to %s\n", s.topicComposer.ComposeBroadcastTopic())
 		err := s.pubSub.Publish(s.topicComposer.ComposeBroadcastTopic(), msgBytes)
 		if err != nil {
 			s.errCh <- fmt.Errorf("failed to publish message: %w", err)
@@ -138,7 +136,6 @@ func (s *session) Send(msg tss.Message) {
 		for _, to := range routing.To {
 			nodeID := partyIDToNodeID(to)
 			topic := s.topicComposer.ComposeDirectTopic(nodeID)
-			fmt.Printf("sending direct message to %s\n", topic)
 			err := s.direct.Send(topic, msgBytes)
 			if err != nil {
 				s.errCh <- fmt.Errorf("failed to send message: %w", err)
@@ -149,14 +146,13 @@ func (s *session) Send(msg tss.Message) {
 }
 
 func (s *session) Listen(nodeID string, isResharingParty bool) {
-	var directTopic string
+	var selfDirectTopic string
 	if isResharingParty {
-		directTopic = s.topicComposer.ComposeDirectTopic(fmt.Sprintf("%s:%s", nodeID, "resharing"))
+		selfDirectTopic = s.topicComposer.ComposeDirectTopic(fmt.Sprintf("%s:%s", nodeID, PurposeReshare))
 	} else {
-		directTopic = s.topicComposer.ComposeDirectTopic(fmt.Sprintf("%s:%s", nodeID, "keygen"))
+		selfDirectTopic = s.topicComposer.ComposeDirectTopic(fmt.Sprintf("%s:%s", nodeID, PurposeKeygen))
 	}
 	broadcast := func() {
-		fmt.Printf("subscribing to broadcast topic %s\n", s.topicComposer.ComposeBroadcastTopic())
 		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(natMsg *nats.Msg) {
 			msg := natMsg.Data
 			s.receive(msg)
@@ -171,8 +167,7 @@ func (s *session) Listen(nodeID string, isResharingParty bool) {
 	}
 
 	direct := func() {
-		fmt.Printf("subscribing to direct topic %s\n", directTopic)
-		sub, err := s.direct.Listen(directTopic, func(msg []byte) {
+		sub, err := s.direct.Listen(selfDirectTopic, func(msg []byte) {
 			s.receive(msg)
 		})
 
@@ -188,11 +183,11 @@ func (s *session) Listen(nodeID string, isResharingParty bool) {
 	go direct()
 }
 
-func (s *session) SaveKey(participantPeerIDs []string, threshold int, isReshared bool, data []byte) (err error) {
+func (s *session) SaveKey(participantPeerIDs []string, threshold int, version int, data []byte) (err error) {
 	keyInfo := keyinfo.KeyInfo{
 		ParticipantPeerIDs: participantPeerIDs,
 		Threshold:          threshold,
-		IsReshared:         isReshared,
+		Version:            uint16(version),
 	}
 	composeKey := s.composeKey(s.walletID)
 	err = s.keyinfoStore.Save(composeKey, &keyInfo)
@@ -206,7 +201,7 @@ func (s *session) SaveKey(participantPeerIDs []string, threshold int, isReshared
 		s.errCh <- fmt.Errorf("failed to save key: %w", err)
 		return
 	}
-	logger.Info("Saved key", "walletID", s.walletID, "threshold", threshold, "isReshared", isReshared, "data", len(data))
+	logger.Info("Saved key", "walletID", s.walletID, "threshold", threshold, "version", version, "data", len(data))
 	return nil
 }
 
