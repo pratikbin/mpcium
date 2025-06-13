@@ -105,6 +105,8 @@ func (s *session) ErrCh() chan error {
 	return s.errCh
 }
 
+// Send is a wrapper around the party's Send method
+// It signs the message and sends it to the remote party
 func (s *session) Send(msg tss.Message) {
 	data, routing, err := msg.WireBytes()
 	if err != nil {
@@ -145,6 +147,8 @@ func (s *session) Send(msg tss.Message) {
 	}
 }
 
+// Listen is a wrapper around the party's Listen method
+// It subscribes to the broadcast and self direct topics
 func (s *session) Listen(nodeID string, isResharingParty bool) {
 	var selfDirectTopic string
 	if isResharingParty {
@@ -183,6 +187,7 @@ func (s *session) Listen(nodeID string, isResharingParty bool) {
 	go direct()
 }
 
+// SaveKey saves the key to the keyinfo store and the kvstore
 func (s *session) SaveKey(participantPeerIDs []string, threshold int, version int, data []byte) (err error) {
 	keyInfo := keyinfo.KeyInfo{
 		ParticipantPeerIDs: participantPeerIDs,
@@ -209,6 +214,7 @@ func (s *session) SetSaveData(saveBytes []byte) {
 	s.party.SetSaveData(saveBytes)
 }
 
+// GetSaveData gets the key from the kvstore
 func (s *session) GetSaveData() ([]byte, error) {
 	composeKey := s.composeKey(s.walletID)
 	data, err := s.kvstore.Get(composeKey)
@@ -218,6 +224,7 @@ func (s *session) GetSaveData() ([]byte, error) {
 	return data, nil
 }
 
+// receive is a helper function that receives a message from the party
 func (s *session) receive(rawMsg []byte) {
 	msg, err := types.UnmarshalTssMessage(rawMsg)
 	if err != nil {
