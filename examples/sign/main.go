@@ -31,7 +31,7 @@ func main() {
 
 	mpcClient := client.NewMPCClient(client.Options{
 		NatsConn: natsConn,
-		KeyPath:  "./../../event_initiator.key",
+		KeyPath:  "./event_initiator.key",
 	})
 
 	// 2) Once wallet exists, immediately fire a SignTransaction

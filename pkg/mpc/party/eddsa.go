@@ -20,7 +20,7 @@ type EDDSAParty struct {
 	saveData      *keygen.LocalPartySaveData
 }
 
-func NewEDDAParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int,
+func NewEDDSAParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int,
 	reshareParams *tss.ReSharingParameters, saveData *keygen.LocalPartySaveData, errCh chan error) *EDDSAParty {
 	return &EDDSAParty{
 		party:         *NewParty(walletID, partyID, partyIDs, threshold, errCh),

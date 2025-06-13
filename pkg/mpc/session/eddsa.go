@@ -23,8 +23,8 @@ type EDDSASession struct {
 }
 
 func NewEDDSASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int, pubSub messaging.PubSub, direct messaging.DirectMessaging, identityStore identity.Store, kvstore kvstore.KVStore, keyinfoStore keyinfo.Store) *EDDSASession {
-	s := NewSession(CurveSecp256k1, PurposeKeygen, walletID, pubSub, direct, identityStore, kvstore, keyinfoStore)
-	s.party = party.NewEDDAParty(walletID, partyID, partyIDs, threshold, nil, nil, s.errCh)
+	s := NewSession(PurposeKeygen, walletID, pubSub, direct, identityStore, kvstore, keyinfoStore)
+	s.party = party.NewEDDSAParty(walletID, partyID, partyIDs, threshold, nil, nil, s.errCh)
 	s.topicComposer = &TopicComposer{
 		ComposeBroadcastTopic: func() string {
 			return fmt.Sprintf("broadcast:eddsa:%s", walletID)
