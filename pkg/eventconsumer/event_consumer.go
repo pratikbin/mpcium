@@ -23,6 +23,9 @@ const (
 	MPCGenerateEvent  = "mpc:generate"
 	MPCSignEvent      = "mpc:sign"
 	MPCResharingEvent = "mpc:reshare"
+
+	// Default version for keygen
+	DefaultVersion int = 0
 )
 
 type EventConsumer interface {
@@ -157,7 +160,7 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		ecdsaCtx, ecdsaCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		go ecdsaSession.StartKeygen(ecdsaCtx, ecdsaSession.Send, func(data []byte) {
 			ecdsaCancel()
-			ecdsaSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, false, data)
+			ecdsaSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, DefaultVersion, data)
 			ecdsaPubKey, err := ecdsaSession.GetPublicKey(data)
 			if err != nil {
 				logger.Error("Failed to get ECDSA public key", err)
@@ -170,7 +173,7 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		eddsaCtx, eddsaCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		go eddsaSession.StartKeygen(eddsaCtx, eddsaSession.Send, func(data []byte) {
 			eddsaCancel()
-			eddsaSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, false, data)
+			eddsaSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, DefaultVersion, data)
 			eddsaPubKey, err := eddsaSession.GetPublicKey(data)
 			if err != nil {
 				logger.Error("Failed to get EDDSA public key", err)
@@ -230,10 +233,21 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			return
 		}
 
+		// Add session to tracking before starting
+		ec.addSession(msg.WalletID, msg.TxID)
+
+		partyVersion, err := ec.node.GetPartyVersion(msg.KeyType, msg.WalletID)
+		if err != nil {
+			logger.Error("Failed to get party version", err)
+			ec.removeSession(msg.WalletID, msg.TxID)
+			return
+		}
+
 		signingSession, err := ec.node.CreateSigningSession(
 			msg.KeyType,
 			msg.WalletID,
 			msg.TxID,
+			partyVersion,
 			ec.mpcThreshold,
 			ec.signingResultQueue,
 		)
@@ -247,6 +261,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				"Failed to create signing session",
 				natMsg,
 			)
+			ec.removeSession(msg.WalletID, msg.TxID)
 			return
 		}
 
@@ -260,6 +275,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				signatureData, err := signingSession.VerifySignature(msg.Tx, data)
 				if err != nil {
 					logger.Error("Failed to verify signature", err)
+					ec.removeSession(msg.WalletID, msg.TxID)
 					return
 				}
 
@@ -277,6 +293,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				signingResultBytes, err := json.Marshal(signingResult)
 				if err != nil {
 					logger.Error("Failed to marshal signing result event", err)
+					ec.removeSession(msg.WalletID, msg.TxID)
 					return
 				}
 
@@ -285,15 +302,14 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 				})
 				if err != nil {
 					logger.Error("Failed to publish signing result event", err)
+					ec.removeSession(msg.WalletID, msg.TxID)
 					return
 				}
 
 				logger.Info("Signing completed", "walletID", msg.WalletID, "txID", msg.TxID, "data", len(data))
+				ec.removeSession(msg.WalletID, msg.TxID)
 			})
 		}()
-
-		// Mark session as already processed
-		ec.addSession(msg.WalletID, msg.TxID)
 
 		go func() {
 			for err := range signingSession.ErrCh() {
@@ -307,6 +323,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 						"Failed to sign tx",
 						natMsg,
 					)
+					ec.removeSession(msg.WalletID, msg.TxID)
 					return
 				}
 			}
@@ -337,12 +354,18 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 			logger.Error("Failed to verify initiator message", err)
 			return
 		}
+		partyVersion, err := ec.node.GetPartyVersion(msg.KeyType, msg.WalletID)
+		if err != nil {
+			logger.Error("Failed to get party version", err)
+			return
+		}
 
 		oldSession, err := ec.node.CreateResharingSession(
 			true,
 			msg.KeyType,
 			msg.WalletID,
 			ec.mpcThreshold,
+			partyVersion,
 			ec.resharingResultQueue,
 		)
 		if err != nil {
@@ -355,6 +378,7 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 			msg.KeyType,
 			msg.WalletID,
 			msg.NewThreshold,
+			partyVersion, // Increment inside the session
 			ec.resharingResultQueue,
 		)
 		if err != nil {
@@ -372,22 +396,20 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 		var wg sync.WaitGroup
 		wg.Add(2)
 
-		// Handle errors from the session
 		go func() {
 			for {
 				select {
 				case err := <-oldSession.ErrCh():
 					logger.Error("Error from ECDSA session", err)
-					return
 				case err := <-newSession.ErrCh():
 					logger.Error("Error from EDDSA session", err)
-					return
 				}
 			}
 		}()
 
 		oldCtx, oldCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		go oldSession.StartResharing(oldCtx, oldSession.PartyIDs(), newSession.PartyIDs(), ec.mpcThreshold, msg.NewThreshold, oldSession.Send, func(data []byte) {
+			fmt.Printf("old session done\n")
 			oldCancel()
 			wg.Done()
 		})
@@ -395,18 +417,12 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 		newCtx, newCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		go newSession.StartResharing(newCtx, oldSession.PartyIDs(), newSession.PartyIDs(), ec.mpcThreshold, msg.NewThreshold, newSession.Send, func(data []byte) {
 			newCancel()
-			// Rebuild the save data for and attach to old session
-			subsetData, err := newSession.BuildLocalSaveDataSubset(data, oldSession.PartyIDs())
-			if err != nil {
-				logger.Error("Failed to build local save data subset", err)
-				return
-			}
-			newSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), msg.NewThreshold, true, subsetData)
-			ecdsaPubKey, err := newSession.GetPublicKey(subsetData)
+			ecdsaPubKey, err := newSession.GetPublicKey(data)
 			if err != nil {
 				logger.Error("Failed to get ECDSA public key", err)
 				return
 			}
+			newSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), msg.NewThreshold, partyVersion+1, data)
 			successEvent.ECDSAPubKey = ecdsaPubKey
 			wg.Done()
 		})

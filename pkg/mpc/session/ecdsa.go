@@ -28,10 +28,10 @@ func NewECDSASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.Part
 	s.party = party.NewECDSAParty(walletID, partyID, partyIDs, threshold, preParams, s.errCh)
 	s.topicComposer = &TopicComposer{
 		ComposeBroadcastTopic: func() string {
-			return fmt.Sprintf("keygen:broadcast:ecdsa:%s", walletID)
+			return fmt.Sprintf("broadcast:ecdsa:%s", walletID)
 		},
 		ComposeDirectTopic: func(nodeID string) string {
-			return fmt.Sprintf("keygen:direct:ecdsa:%s:%s", nodeID, walletID)
+			return fmt.Sprintf("direct:ecdsa:%s:%s", nodeID, walletID)
 		},
 	}
 	s.composeKey = func(walletID string) string {
@@ -113,34 +113,4 @@ func (s *ECDSASession) VerifySignature(msg []byte, signature []byte) (*common.Si
 	}
 
 	return signatureData, nil
-}
-
-func (s *ECDSASession) BuildLocalSaveDataSubset(sourceData []byte, sortedIDs tss.SortedPartyIDs) ([]byte, error) {
-	saveData := &keygen.LocalPartySaveData{}
-	err := json.Unmarshal(sourceData, saveData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal save data: %w", err)
-	}
-	return json.Marshal(buildLocalSaveDataSubset(*saveData, sortedIDs))
-}
-
-func buildLocalSaveDataSubset(sourceData keygen.LocalPartySaveData, sortedIDs tss.SortedPartyIDs) keygen.LocalPartySaveData {
-	if len(sortedIDs) != len(sourceData.Ks) {
-		return keygen.LocalPartySaveData{}
-	}
-	newData := keygen.NewLocalPartySaveData(sortedIDs.Len())
-	newData.LocalPreParams = sourceData.LocalPreParams
-	newData.LocalSecrets = sourceData.LocalSecrets
-	newData.ECDSAPub = sourceData.ECDSAPub
-
-	// Map directly based on sorted ID order
-	for j := range sortedIDs {
-		newData.Ks[j] = sourceData.Ks[j]
-		newData.NTildej[j] = sourceData.NTildej[j]
-		newData.H1j[j] = sourceData.H1j[j]
-		newData.H2j[j] = sourceData.H2j[j]
-		newData.BigXj[j] = sourceData.BigXj[j]
-		newData.PaillierPKs[j] = sourceData.PaillierPKs[j]
-	}
-	return newData
 }

@@ -79,8 +79,8 @@ func (s *EDDSAParty) StartResharing(ctx context.Context, oldPartyIDs, newPartyID
 		tss.NewPeerContext(newPartyIDs),
 		s.partyID,
 		len(oldPartyIDs),
-		len(newPartyIDs),
 		oldThreshold,
+		len(newPartyIDs),
 		newThreshold,
 	)
 	party := resharing.NewLocalParty(params, *s.saveData, s.outCh, end)

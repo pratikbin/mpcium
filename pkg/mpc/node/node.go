@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strconv"
 	"time"
 
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
@@ -17,6 +18,8 @@ import (
 	"github.com/fystack/mpcium/pkg/types"
 	"github.com/google/uuid"
 )
+
+const DefaultVersion = 0
 
 type Node struct {
 	nodeID  string
@@ -56,7 +59,7 @@ func (n *Node) CreateKeygenSession(keyType types.KeyType, walletID string, thres
 	}
 
 	readyPeerIDs := n.peerRegistry.GetReadyPeersIncludeSelf()
-	selfPartyID, allPartyIDs := n.generatePartyIDs("keygen", readyPeerIDs)
+	selfPartyID, allPartyIDs := n.generatePartyIDs(session.PurposeKeygen, readyPeerIDs, DefaultVersion)
 	switch keyType {
 	case types.KeyTypeSecp256k1:
 		preparams, err := n.getECDSAPreParams(false)
@@ -95,13 +98,13 @@ func (n *Node) CreateKeygenSession(keyType types.KeyType, walletID string, thres
 	}
 }
 
-func (n *Node) CreateSigningSession(keyType types.KeyType, walletID string, txID string, threshold int, successQueue messaging.MessageQueue) (session.Session, error) {
+func (n *Node) CreateSigningSession(keyType types.KeyType, walletID string, txID string, partyVersion int, threshold int, successQueue messaging.MessageQueue) (session.Session, error) {
 	if n.peerRegistry.GetReadyPeersCount() < int64(threshold+1) {
 		return nil, fmt.Errorf("not enough peers to create gen session! expected %d, got %d", threshold+1, n.peerRegistry.GetReadyPeersCount())
 	}
 
 	readyPeerIDs := n.peerRegistry.GetReadyPeersIncludeSelf()
-	selfPartyID, allPartyIDs := n.generatePartyIDs("keygen", readyPeerIDs)
+	selfPartyID, allPartyIDs := n.generatePartyIDs(session.PurposeSign, readyPeerIDs, partyVersion)
 	switch keyType {
 	case types.KeyTypeSecp256k1:
 		ecdsaSession := session.NewECDSASession(
@@ -150,7 +153,7 @@ func (n *Node) CreateSigningSession(keyType types.KeyType, walletID string, txID
 	}
 }
 
-func (n *Node) CreateResharingSession(isOldParty bool, keyType types.KeyType, walletID string, threshold int, successQueue messaging.MessageQueue) (session.Session, error) {
+func (n *Node) CreateResharingSession(isOldParty bool, keyType types.KeyType, walletID string, threshold int, partyVersion int, successQueue messaging.MessageQueue) (session.Session, error) {
 	if n.peerRegistry.GetReadyPeersCount() < int64(threshold+1) {
 		return nil, fmt.Errorf("not enough peers to create resharing session! expected %d, got %d", threshold+1, n.peerRegistry.GetReadyPeersCount())
 	}
@@ -158,9 +161,9 @@ func (n *Node) CreateResharingSession(isOldParty bool, keyType types.KeyType, wa
 	var selfPartyID *tss.PartyID
 	var partyIDs []*tss.PartyID
 	if isOldParty {
-		selfPartyID, partyIDs = n.generatePartyIDs("keygen", readyPeerIDs)
+		selfPartyID, partyIDs = n.generatePartyIDs(session.PurposeKeygen, readyPeerIDs, partyVersion)
 	} else {
-		selfPartyID, partyIDs = n.generatePartyIDs("resharing", readyPeerIDs)
+		selfPartyID, partyIDs = n.generatePartyIDs(session.PurposeReshare, readyPeerIDs, partyVersion+1) // Increment version for new parties
 	}
 
 	switch keyType {
@@ -204,6 +207,23 @@ func (n *Node) GetReadyPeersIncludeSelf() []string {
 	return n.peerRegistry.GetReadyPeersIncludeSelf()
 }
 
+func (n *Node) GetPartyVersion(keyType types.KeyType, walletID string) (int, error) {
+	var walletKey string
+	switch keyType {
+	case types.KeyTypeSecp256k1:
+		walletKey = fmt.Sprintf("ecdsa:%s", walletID)
+	case types.KeyTypeEd25519:
+		walletKey = fmt.Sprintf("eddsa:%s", walletID)
+	default:
+		return 0, fmt.Errorf("invalid key type: %s", keyType)
+	}
+	keyInfo, err := n.keyinfoStore.Get(walletKey)
+	if err != nil {
+		return 0, err
+	}
+	return int(keyInfo.Version), nil
+}
+
 func (n *Node) getECDSAPreParams(isOldParty bool) (*keygen.LocalPreParams, error) {
 	var path string
 	if isOldParty {
@@ -235,13 +255,13 @@ func (n *Node) getECDSAPreParams(isOldParty bool) (*keygen.LocalPreParams, error
 	return &preparams, nil
 }
 
-func (n *Node) generatePartyIDs(purpose string, readyPeerIDs []string) (self *tss.PartyID, all []*tss.PartyID) {
+func (n *Node) generatePartyIDs(purpose session.Purpose, readyPeerIDs []string, version int) (self *tss.PartyID, all []*tss.PartyID) {
 	// Pre-allocate slice with exact size needed
 	partyIDs := make([]*tss.PartyID, 0, len(readyPeerIDs))
 
 	// Create all party IDs in one pass
 	for _, peerID := range readyPeerIDs {
-		partyID := createPartyID(peerID, purpose)
+		partyID := createPartyID(peerID, string(purpose), version)
 		if peerID == n.nodeID {
 			self = partyID
 		}
@@ -253,9 +273,9 @@ func (n *Node) generatePartyIDs(purpose string, readyPeerIDs []string) (self *ts
 	return
 }
 
-func createPartyID(nodeID string, label string) *tss.PartyID {
+func createPartyID(nodeID string, label string, version int) *tss.PartyID {
 	partyID := uuid.NewString()
-	key := big.NewInt(0).SetBytes([]byte(partyID))
 	moniker := nodeID + ":" + label
+	key := big.NewInt(0).SetBytes([]byte(nodeID + ":" + strconv.Itoa(version)))
 	return tss.NewPartyID(partyID, moniker, key)
 }

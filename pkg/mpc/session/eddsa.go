@@ -27,10 +27,10 @@ func NewEDDSASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.Part
 	s.party = party.NewEDDAParty(walletID, partyID, partyIDs, threshold, nil, nil, s.errCh)
 	s.topicComposer = &TopicComposer{
 		ComposeBroadcastTopic: func() string {
-			return fmt.Sprintf("keygen:broadcast:eddsa:%s", walletID)
+			return fmt.Sprintf("broadcast:eddsa:%s", walletID)
 		},
 		ComposeDirectTopic: func(nodeID string) string {
-			return fmt.Sprintf("keygen:direct:eddsa:%s:%s", nodeID, walletID)
+			return fmt.Sprintf("direct:eddsa:%s:%s", nodeID, walletID)
 		},
 	}
 	s.composeKey = func(walletID string) string {
@@ -115,13 +115,4 @@ func (s *EDDSASession) VerifySignature(msg []byte, signature []byte) (*common.Si
 	}
 
 	return signatureData, nil
-}
-
-func (s *EDDSASession) BuildLocalSaveDataSubset(sourceData []byte, sortedIDs tss.SortedPartyIDs) ([]byte, error) {
-	saveData := &keygen.LocalPartySaveData{}
-	err := json.Unmarshal(sourceData, saveData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal save data: %w", err)
-	}
-	return json.Marshal(keygen.BuildLocalSaveDataSubset(*saveData, sortedIDs))
 }
