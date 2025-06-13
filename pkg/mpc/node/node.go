@@ -233,6 +233,18 @@ func (n *Node) GetKeyInfoVersion(keyType types.KeyType, walletID string) (int, e
 	return int(keyInfo.Version), nil
 }
 
+// PreloadPreParams preloads the preparams for the first time
+func (n *Node) PreloadPreParams() {
+	_, err := n.getECDSAPreParams(false)
+	if err != nil {
+		logger.Error("Failed to get preparams", err)
+	}
+	_, err = n.getECDSAPreParams(true)
+	if err != nil {
+		logger.Error("Failed to get preparams", err)
+	}
+}
+
 // For ecdsa, we need to generate preparams for each party
 // Load preparams from kvstore if exists, otherwise generate and save to kvstore
 func (n *Node) getECDSAPreParams(isOldParty bool) (*keygen.LocalPreParams, error) {
