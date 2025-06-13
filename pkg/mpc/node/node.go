@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// DefaultVersion is the default version for keygen and resharing
 const DefaultVersion = 0
 
 type Node struct {
@@ -181,6 +182,7 @@ func (n *Node) CreateResharingSession(isOldParty bool, keyType types.KeyType, wa
 			ecdsaSession.SetSaveData(saveData)
 		} else {
 			// Initialize new save data for new parties
+			// Reduce the loading time by pre-allocating the save data
 			saveData := keygen.NewLocalPartySaveData(len(partyIDs))
 			saveData.LocalPreParams = *preparams
 			saveDataBytes, err := json.Marshal(saveData)
@@ -207,7 +209,7 @@ func (n *Node) GetReadyPeersIncludeSelf() []string {
 	return n.peerRegistry.GetReadyPeersIncludeSelf()
 }
 
-func (n *Node) GetPartyVersion(keyType types.KeyType, walletID string) (int, error) {
+func (n *Node) GetKeyInfoVersion(keyType types.KeyType, walletID string) (int, error) {
 	var walletKey string
 	switch keyType {
 	case types.KeyTypeSecp256k1:
@@ -224,6 +226,8 @@ func (n *Node) GetPartyVersion(keyType types.KeyType, walletID string) (int, err
 	return int(keyInfo.Version), nil
 }
 
+// For ecdsa, we need to generate preparams for each party
+// Load preparams from kvstore if exists, otherwise generate and save to kvstore
 func (n *Node) getECDSAPreParams(isOldParty bool) (*keygen.LocalPreParams, error) {
 	var path string
 	if isOldParty {
@@ -255,6 +259,9 @@ func (n *Node) getECDSAPreParams(isOldParty bool) (*keygen.LocalPreParams, error
 	return &preparams, nil
 }
 
+// generatePartyIDs generates the party IDs for the given purpose and version
+// It returns the self party ID and all party IDs
+// It also sorts the party IDs in place
 func (n *Node) generatePartyIDs(purpose session.Purpose, readyPeerIDs []string, version int) (self *tss.PartyID, all []*tss.PartyID) {
 	// Pre-allocate slice with exact size needed
 	partyIDs := make([]*tss.PartyID, 0, len(readyPeerIDs))
@@ -273,6 +280,10 @@ func (n *Node) generatePartyIDs(purpose session.Purpose, readyPeerIDs []string, 
 	return
 }
 
+// createPartyID creates a new party ID for the given node ID, label and version
+// It returns the party ID: random string
+// Moniker: for routing messages
+// Key: for mpc internal use (need persistent storage)
 func createPartyID(nodeID string, label string, version int) *tss.PartyID {
 	partyID := uuid.NewString()
 	moniker := nodeID + ":" + label

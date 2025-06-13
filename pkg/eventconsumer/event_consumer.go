@@ -236,7 +236,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		// Add session to tracking before starting
 		ec.addSession(msg.WalletID, msg.TxID)
 
-		partyVersion, err := ec.node.GetPartyVersion(msg.KeyType, msg.WalletID)
+		keyInfoVersion, err := ec.node.GetKeyInfoVersion(msg.KeyType, msg.WalletID)
 		if err != nil {
 			logger.Error("Failed to get party version", err)
 			ec.removeSession(msg.WalletID, msg.TxID)
@@ -247,7 +247,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			msg.KeyType,
 			msg.WalletID,
 			msg.TxID,
-			partyVersion,
+			keyInfoVersion,
 			ec.mpcThreshold,
 			ec.signingResultQueue,
 		)
@@ -354,7 +354,7 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 			logger.Error("Failed to verify initiator message", err)
 			return
 		}
-		partyVersion, err := ec.node.GetPartyVersion(msg.KeyType, msg.WalletID)
+		keyInfoVersion, err := ec.node.GetKeyInfoVersion(msg.KeyType, msg.WalletID)
 		if err != nil {
 			logger.Error("Failed to get party version", err)
 			return
@@ -365,7 +365,7 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 			msg.KeyType,
 			msg.WalletID,
 			ec.mpcThreshold,
-			partyVersion,
+			keyInfoVersion,
 			ec.resharingResultQueue,
 		)
 		if err != nil {
@@ -378,7 +378,7 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 			msg.KeyType,
 			msg.WalletID,
 			msg.NewThreshold,
-			partyVersion, // Increment inside the session
+			keyInfoVersion, // Increment inside the session
 			ec.resharingResultQueue,
 		)
 		if err != nil {
@@ -409,7 +409,7 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 
 		oldCtx, oldCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		go oldSession.StartResharing(oldCtx, oldSession.PartyIDs(), newSession.PartyIDs(), ec.mpcThreshold, msg.NewThreshold, oldSession.Send, func(data []byte) {
-			fmt.Printf("old session done\n")
+			// Old session is done, no need to save
 			oldCancel()
 			wg.Done()
 		})
@@ -417,12 +417,13 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 		newCtx, newCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		go newSession.StartResharing(newCtx, oldSession.PartyIDs(), newSession.PartyIDs(), ec.mpcThreshold, msg.NewThreshold, newSession.Send, func(data []byte) {
 			newCancel()
+			// Only save for new parties
 			ecdsaPubKey, err := newSession.GetPublicKey(data)
 			if err != nil {
 				logger.Error("Failed to get ECDSA public key", err)
 				return
 			}
-			newSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), msg.NewThreshold, partyVersion+1, data)
+			newSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), msg.NewThreshold, keyInfoVersion+1, data)
 			successEvent.ECDSAPubKey = ecdsaPubKey
 			wg.Done()
 		})
