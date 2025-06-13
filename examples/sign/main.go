@@ -7,20 +7,21 @@ import (
 	"syscall"
 
 	"github.com/fystack/mpcium/pkg/client"
+	"github.com/fystack/mpcium/pkg/config"
 	"github.com/fystack/mpcium/pkg/event"
 	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/fystack/mpcium/pkg/types"
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
+	"github.com/spf13/viper"
 )
 
 func main() {
 	const environment = "dev"
-	// config.InitViperConfig()
+	config.InitViperConfig()
 	logger.Init(environment, true)
 
-	// natsURL := viper.GetString("nats.url")
-	natsURL := "nats://localhost:4222"
+	natsURL := viper.GetString("nats.url")
 	natsConn, err := nats.Connect(natsURL)
 	if err != nil {
 		logger.Fatal("Failed to connect to NATS", err)
