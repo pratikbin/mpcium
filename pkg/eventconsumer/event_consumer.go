@@ -314,18 +314,15 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		go func() {
 			for err := range signingSession.ErrCh() {
 				logger.Error("Error from session", err)
-				if err != nil {
-					ec.handleSigningSessionError(
-						msg.WalletID,
-						msg.TxID,
-						msg.NetworkInternalCode,
-						err,
-						"Failed to sign tx",
-						natMsg,
-					)
-					ec.removeSession(msg.WalletID, msg.TxID)
-					return
-				}
+				ec.handleSigningSessionError(
+					msg.WalletID,
+					msg.TxID,
+					msg.NetworkInternalCode,
+					err,
+					"Failed to sign tx",
+					natMsg,
+				)
+				ec.removeSession(msg.WalletID, msg.TxID)
 			}
 		}()
 	})

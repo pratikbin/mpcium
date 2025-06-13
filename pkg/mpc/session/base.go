@@ -76,7 +76,6 @@ type session struct {
 }
 
 func NewSession(
-	curve Curve,
 	purpose Purpose,
 	walletID string,
 	pubSub messaging.PubSub,

@@ -30,7 +30,7 @@ func main() {
 
 	mpcClient := client.NewMPCClient(client.Options{
 		NatsConn: natsConn,
-		KeyPath:  "./../../event_initiator.key",
+		KeyPath:  "./event_initiator.key",
 	})
 	err = mpcClient.OnResharingResult(func(event event.ResharingSuccessEvent) {
 		logger.Info("Received resharing result", "event", event)
