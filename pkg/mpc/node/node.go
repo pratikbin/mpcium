@@ -205,6 +205,13 @@ func (n *Node) CreateResharingSession(isOldParty bool, keyType types.KeyType, wa
 	}
 }
 
+func (p *Node) Close() {
+	err := p.peerRegistry.Resign()
+	if err != nil {
+		logger.Error("Resign failed", err)
+	}
+}
+
 func (n *Node) GetReadyPeersIncludeSelf() []string {
 	return n.peerRegistry.GetReadyPeersIncludeSelf()
 }

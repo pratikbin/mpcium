@@ -157,6 +157,7 @@ func runNode(ctx context.Context, c *cli.Command) error {
 		identityStore,
 		peerRegistry,
 	)
+	defer mpcNode.Close()
 
 	eventConsumer := eventconsumer.NewEventConsumer(
 		mpcNode,
