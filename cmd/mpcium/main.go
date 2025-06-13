@@ -157,6 +157,8 @@ func runNode(ctx context.Context, c *cli.Command) error {
 		identityStore,
 		peerRegistry,
 	)
+	// Preload preparams for the first time
+	mpcNode.PreloadPreParams()
 	defer mpcNode.Close()
 
 	eventConsumer := eventconsumer.NewEventConsumer(

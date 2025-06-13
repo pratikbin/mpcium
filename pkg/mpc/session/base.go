@@ -135,7 +135,7 @@ func (s *session) Send(msg tss.Message) {
 		}
 	} else {
 		for _, to := range routing.To {
-			nodeID := partyIDToNodeID(to)
+			nodeID := getRoutingFromPartyID(to)
 			topic := s.topicComposer.ComposeDirectTopic(nodeID)
 			err := s.direct.Send(topic, msgBytes)
 			if err != nil {
@@ -151,9 +151,9 @@ func (s *session) Send(msg tss.Message) {
 func (s *session) Listen(nodeID string, isResharingParty bool) {
 	var selfDirectTopic string
 	if isResharingParty {
-		selfDirectTopic = s.topicComposer.ComposeDirectTopic(fmt.Sprintf("%s:%s", nodeID, PurposeReshare))
+		selfDirectTopic = s.topicComposer.ComposeDirectTopic(getRoutingFromPartyID(s.party.PartyID()))
 	} else {
-		selfDirectTopic = s.topicComposer.ComposeDirectTopic(fmt.Sprintf("%s:%s", nodeID, PurposeKeygen))
+		selfDirectTopic = s.topicComposer.ComposeDirectTopic(getRoutingFromPartyID(s.party.PartyID()))
 	}
 	broadcast := func() {
 		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(natMsg *nats.Msg) {
