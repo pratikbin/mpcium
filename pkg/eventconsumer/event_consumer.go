@@ -351,11 +351,9 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 			logger.Error("Failed to verify initiator message", err)
 			return
 		}
-		keyInfoVersion, err := ec.node.GetKeyInfoVersion(msg.KeyType, msg.WalletID)
-		if err != nil {
-			logger.Error("Failed to get party version", err)
-			return
-		}
+
+		// Default is -1 if no key found
+		keyInfoVersion, _ := ec.node.GetKeyInfoVersion(msg.KeyType, msg.WalletID)
 
 		oldSession, err := ec.node.CreateResharingSession(
 			true,
