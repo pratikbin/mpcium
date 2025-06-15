@@ -352,9 +352,9 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 			return
 		}
 
-		// Default is -1 if no key found
+		// Default is 0 if no keyVersion found
 		keyInfoVersion, _ := ec.node.GetKeyInfoVersion(msg.KeyType, msg.WalletID)
-
+		fmt.Println("keyInfoVersion", keyInfoVersion)
 		oldSession, err := ec.node.CreateResharingSession(
 			true,
 			msg.KeyType,

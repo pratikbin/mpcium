@@ -20,7 +20,7 @@ import (
 )
 
 // DefaultVersion is the default version for keygen and resharing
-const DefaultVersion = 0
+const DefaultVersion = 1
 
 type Node struct {
 	nodeID  string
@@ -224,11 +224,11 @@ func (n *Node) GetKeyInfoVersion(keyType types.KeyType, walletID string) (int, e
 	case types.KeyTypeEd25519:
 		walletKey = fmt.Sprintf("eddsa:%s", walletID)
 	default:
-		return -1, fmt.Errorf("invalid key type: %s", keyType)
+		return 0, fmt.Errorf("invalid key type: %s", keyType)
 	}
 	keyInfo, err := n.keyinfoStore.Get(walletKey)
 	if err != nil {
-		return -1, err
+		return 0, err
 	}
 	return int(keyInfo.Version), nil
 }
@@ -307,7 +307,7 @@ func createPartyID(nodeID string, label string, version int) *tss.PartyID {
 	partyID := uuid.NewString()
 	moniker := nodeID + ":" + label
 	var key *big.Int
-	if version == -1 {
+	if version == 0 {
 		key = big.NewInt(0).SetBytes([]byte(nodeID))
 	} else {
 		key = big.NewInt(0).SetBytes([]byte(nodeID + ":" + strconv.Itoa(version)))
