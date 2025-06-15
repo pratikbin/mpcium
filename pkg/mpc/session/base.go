@@ -191,7 +191,7 @@ func (s *session) SaveKey(participantPeerIDs []string, threshold int, version in
 	keyInfo := keyinfo.KeyInfo{
 		ParticipantPeerIDs: participantPeerIDs,
 		Threshold:          threshold,
-		Version:            uint16(version),
+		Version:            version,
 	}
 	composeKey := s.composeKey(s.walletID)
 	err = s.keyinfoStore.Save(composeKey, &keyInfo)

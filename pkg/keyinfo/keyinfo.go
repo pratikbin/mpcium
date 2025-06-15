@@ -11,7 +11,7 @@ import (
 type KeyInfo struct {
 	ParticipantPeerIDs []string `json:"participant_peer_ids"`
 	Threshold          int      `json:"threshold"`
-	Version            uint16   `json:"version"`
+	Version            int      `json:"version"`
 }
 
 type store struct {
