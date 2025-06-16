@@ -133,8 +133,8 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		}
 
 		// Start listening for messages first
-		go ecdsaSession.Listen(ec.node.ID(), false)
-		go eddsaSession.Listen(ec.node.ID(), false)
+		go ecdsaSession.Listen()
+		go eddsaSession.Listen()
 		successEvent := &event.KeygenSuccessEvent{
 			WalletID: walletID,
 		}
@@ -201,7 +201,6 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 		}
 		logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", walletID)
 	})
-
 	ec.keyGenerationSub = sub
 	if err != nil {
 		return err
@@ -265,7 +264,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			return
 		}
 
-		go signingSession.Listen(ec.node.ID(), false)
+		go signingSession.Listen()
 
 		txBigInt := new(big.Int).SetBytes(msg.Tx)
 		go func() {
@@ -381,8 +380,8 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 			return
 		}
 
-		go oldSession.Listen(ec.node.ID(), false)
-		go newSession.Listen(ec.node.ID(), true)
+		go oldSession.Listen()
+		go newSession.Listen()
 
 		successEvent := &event.ResharingSuccessEvent{
 			WalletID: msg.WalletID,

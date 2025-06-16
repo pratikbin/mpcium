@@ -50,7 +50,7 @@ type Session interface {
 
 	PartyIDs() []*tss.PartyID
 	Send(msg tss.Message)
-	Listen(nodeID string)
+	Listen()
 	SaveKey(participantPeerIDs []string, threshold int, version int, data []byte) (err error)
 	ErrCh() chan error
 }
@@ -157,7 +157,7 @@ func (s *session) Send(msg tss.Message) {
 
 // Listen is a wrapper around the party's Listen method
 // It subscribes to the broadcast and self direct topics
-func (s *session) Listen(nodeID string) {
+func (s *session) Listen() {
 	selfDirectTopic := s.topicComposer.ComposeDirectTopic(getRoutingFromPartyID(s.party.PartyID()))
 	broadcast := func() {
 		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(natMsg *nats.Msg) {
