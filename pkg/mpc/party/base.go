@@ -19,6 +19,7 @@ type PartyInterface interface {
 	PartyIDs() []*tss.PartyID
 	GetSaveData() []byte
 	SetSaveData(saveData []byte)
+	ClassifyMsg(msgBytes []byte) (uint8, bool, error)
 	InCh() chan types.TssMessage
 	OutCh() chan tss.Message
 	ErrCh() chan error
@@ -62,7 +63,7 @@ func (p *party) ErrCh() chan error {
 
 // runParty handles the common party execution loop
 func runParty[T any](s PartyInterface, ctx context.Context, party tss.Party, send func(tss.Message), endCh chan T, finish func([]byte)) {
-	// Start the party in a goroutine
+	// Start the party in a goroutine to handle errors
 	go func() {
 		logger.Info("Starting party", "partyID", s.PartyID().String())
 		if err := party.Start(); err != nil {

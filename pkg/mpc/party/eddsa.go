@@ -12,6 +12,8 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/eddsa/resharing"
 	"github.com/bnb-chain/tss-lib/v2/eddsa/signing"
 	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/golang/protobuf/ptypes/any"
+	"google.golang.org/protobuf/proto"
 )
 
 type EDDSAParty struct {
@@ -46,6 +48,21 @@ func (s *EDDSAParty) SetSaveData(shareData []byte) {
 		return
 	}
 	s.saveData = &localSaveData
+}
+
+func (s *EDDSAParty) ClassifyMsg(msgBytes []byte) (uint8, bool, error) {
+	msg := &any.Any{}
+	if err := proto.Unmarshal(msgBytes, msg); err != nil {
+		return 0, false, err
+	}
+
+	_, isBroadcast := eddsaBroadcastMessages[msg.TypeUrl]
+
+	round := eddsaMsgURL2Round[msg.TypeUrl]
+	if round > 4 {
+		round = round - 4
+	}
+	return round, isBroadcast, nil
 }
 
 func (s *EDDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {

@@ -25,7 +25,7 @@ const (
 	MPCResharingEvent = "mpc:reshare"
 
 	// Default version for keygen
-	DefaultVersion int = 0
+	DefaultVersion int = 1
 )
 
 type EventConsumer interface {
