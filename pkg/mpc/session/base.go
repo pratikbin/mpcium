@@ -50,7 +50,7 @@ type Session interface {
 
 	PartyIDs() []*tss.PartyID
 	Send(msg tss.Message)
-	Listen(nodeID string, isResharing bool)
+	Listen(nodeID string)
 	SaveKey(participantPeerIDs []string, threshold int, version int, data []byte) (err error)
 	ErrCh() chan error
 }
@@ -125,7 +125,16 @@ func (s *session) Send(msg tss.Message) {
 		s.errCh <- fmt.Errorf("failed to marshal message: %w", err)
 		return
 	}
-	logger.Debug("Sending message", "from", routing.From, "to", routing.To, "isBroadcast", routing.IsBroadcast)
+	round, _, err := s.party.ClassifyMsg(data)
+	if err != nil {
+		s.errCh <- fmt.Errorf("failed to classify message: %w", err)
+		return
+	}
+	toNodeIDs := make([]string, len(routing.To))
+	for i, to := range routing.To {
+		toNodeIDs[i] = getRoutingFromPartyID(to)
+	}
+	logger.Debug("Sending message", "from", routing.From.Moniker, "to", toNodeIDs, "isBroadcast", routing.IsBroadcast, "round", round)
 
 	if routing.IsBroadcast && len(routing.To) == 0 {
 		err := s.pubSub.Publish(s.topicComposer.ComposeBroadcastTopic(), msgBytes)
@@ -148,13 +157,8 @@ func (s *session) Send(msg tss.Message) {
 
 // Listen is a wrapper around the party's Listen method
 // It subscribes to the broadcast and self direct topics
-func (s *session) Listen(nodeID string, isResharingParty bool) {
-	var selfDirectTopic string
-	if isResharingParty {
-		selfDirectTopic = s.topicComposer.ComposeDirectTopic(getRoutingFromPartyID(s.party.PartyID()))
-	} else {
-		selfDirectTopic = s.topicComposer.ComposeDirectTopic(getRoutingFromPartyID(s.party.PartyID()))
-	}
+func (s *session) Listen(nodeID string) {
+	selfDirectTopic := s.topicComposer.ComposeDirectTopic(getRoutingFromPartyID(s.party.PartyID()))
 	broadcast := func() {
 		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(natMsg *nats.Msg) {
 			msg := natMsg.Data
@@ -206,7 +210,7 @@ func (s *session) SaveKey(participantPeerIDs []string, threshold int, version in
 		return
 	}
 	logger.Info("Saved key", "walletID", s.walletID, "threshold", threshold, "version", version, "data", len(data))
-	return nil
+	return
 }
 
 func (s *session) SetSaveData(saveBytes []byte) {
@@ -251,7 +255,12 @@ func (s *session) receive(rawMsg []byte) {
 	isToSelf := slices.Contains(toIDs, s.party.PartyID().String())
 
 	if isBroadcast || isToSelf {
-		logger.Debug("Received message", "from", msg.From, "to", msg.To, "isBroadcast", msg.IsBroadcast, "isToSelf", isToSelf)
+		round, _, err := s.party.ClassifyMsg(msg.MsgBytes)
+		if err != nil {
+			s.errCh <- fmt.Errorf("failed to classify message: %w", err)
+			return
+		}
+		logger.Debug("Received message", "from", msg.From.Moniker, "round", round, "isBroadcast", msg.IsBroadcast, "isToSelf", isToSelf)
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.party.InCh() <- *msg
