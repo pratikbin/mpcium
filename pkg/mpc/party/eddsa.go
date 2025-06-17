@@ -52,7 +52,7 @@ func (s *EDDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), fi
 	end := make(chan *keygen.LocalPartySaveData, 1)
 	params := tss.NewParameters(tss.Edwards(), tss.NewPeerContext(s.partyIDs), s.partyID, len(s.partyIDs), s.threshold)
 	party := keygen.NewLocalParty(params, s.outCh, end)
-	runParty(s, ctx, party, send, end, finish)
+	runParty(s, ctx, party, send, end, finish, "eddsa")
 }
 
 func (s *EDDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte)) {
@@ -63,7 +63,7 @@ func (s *EDDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(t
 	end := make(chan *common.SignatureData, 1)
 	params := tss.NewParameters(tss.Edwards(), tss.NewPeerContext(s.partyIDs), s.partyID, len(s.partyIDs), s.threshold)
 	party := signing.NewLocalParty(msg, params, *s.saveData, s.outCh, end)
-	runParty(s, ctx, party, send, end, finish)
+	runParty(s, ctx, party, send, end, finish, "eddsa")
 }
 
 func (s *EDDSAParty) StartResharing(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID,
@@ -84,5 +84,5 @@ func (s *EDDSAParty) StartResharing(ctx context.Context, oldPartyIDs, newPartyID
 		newThreshold,
 	)
 	party := resharing.NewLocalParty(params, *s.saveData, s.outCh, end)
-	runParty(s, ctx, party, send, end, finish)
+	runParty(s, ctx, party, send, end, finish, "eddsa")
 }

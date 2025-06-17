@@ -1,9 +1,11 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/fystack/mpcium/pkg/client"
@@ -17,6 +19,12 @@ import (
 
 func main() {
 	const environment = "development"
+
+	// Parse CLI argument
+	var n int
+	flag.IntVar(&n, "n", 1, "Number of wallets to create")
+	flag.Parse()
+
 	config.InitViperConfig()
 	logger.Init(environment, false)
 
@@ -25,13 +33,14 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to connect to NATS", err)
 	}
-	defer natsConn.Drain() // drain inflight msgs
+	defer natsConn.Drain()
 	defer natsConn.Close()
 
 	mpcClient := client.NewMPCClient(client.Options{
 		NatsConn: natsConn,
 		KeyPath:  "./event_initiator.key",
 	})
+
 	err = mpcClient.OnWalletCreationResult(func(event event.KeygenSuccessEvent) {
 		logger.Info("Received wallet creation result", "event", event)
 	})
@@ -39,11 +48,16 @@ func main() {
 		logger.Fatal("Failed to subscribe to wallet-creation results", err)
 	}
 
-	walletID := uuid.New().String()
-	if err := mpcClient.CreateWallet(walletID); err != nil {
-		logger.Fatal("CreateWallet failed", err)
+	for i := 0; i < n; i++ {
+		walletID := uuid.New().String()
+		if err := mpcClient.CreateWallet(walletID); err != nil {
+			logger.Error("CreateWallet failed", err, "walletID", walletID)
+		} else {
+			logger.Info("CreateWallet sent", "walletID", walletID, "index", strconv.Itoa(i+1))
+		}
 	}
-	logger.Info("CreateWallet sent, awaiting result...", "walletID", walletID)
+
+	logger.Info(fmt.Sprintf("Dispatched %d wallet creation requests", n))
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop

@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/fystack/mpcium/pkg/config"
 	"github.com/fystack/mpcium/pkg/constant"
@@ -347,7 +348,20 @@ func NewBadgerKV(nodeName string) *kvstore.BadgerKVStore {
 
 func GetNATSConnection(environment string) (*nats.Conn, error) {
 	if environment != constant.EnvProduction {
-		return nats.Connect(viper.GetString("nats.url"))
+		return nats.Connect(
+			viper.GetString("nats.url"),
+			nats.MaxReconnects(-1), // retry forever
+			nats.DisconnectHandler(func(nc *nats.Conn) {
+				logger.Warn("Disconnected from NATS")
+			}),
+			nats.ReconnectHandler(func(nc *nats.Conn) {
+				logger.Info("Reconnected to NATS at", "url", nc.ConnectedUrl())
+			}),
+			nats.ClosedHandler(func(nc *nats.Conn) {
+				logger.Info("NATS connection closed!")
+			}),
+			nats.ReconnectWait(2*time.Second),
+		)
 	}
 	clientCert := filepath.Join(".", "certs", "client-cert.pem")
 	clientKey := filepath.Join(".", "certs", "client-key.pem")
@@ -355,6 +369,17 @@ func GetNATSConnection(environment string) (*nats.Conn, error) {
 
 	return nats.Connect(viper.GetString("nats.url"),
 		nats.ClientCert(clientCert, clientKey),
+		nats.MaxReconnects(-1), // retry forever
+		nats.DisconnectHandler(func(nc *nats.Conn) {
+			logger.Warn("Disconnected from NATS")
+		}),
+		nats.ReconnectHandler(func(nc *nats.Conn) {
+			logger.Info("Reconnected to NATS at", "url", nc.ConnectedUrl())
+		}),
+		nats.ClosedHandler(func(nc *nats.Conn) {
+			logger.Info("NATS connection closed!")
+		}),
+		nats.ReconnectWait(2*time.Second),
 		nats.RootCAs(caCert),
 		nats.UserInfo(viper.GetString("nats.username"), viper.GetString("nats.password")),
 	)

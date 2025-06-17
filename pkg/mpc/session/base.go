@@ -151,8 +151,10 @@ func (s *session) Send(msg tss.Message) {
 func (s *session) Listen(nodeID string, isResharingParty bool) {
 	var selfDirectTopic string
 	if isResharingParty {
+		logger.Info("routing", "routing", getRoutingFromPartyID(s.party.PartyID()))
 		selfDirectTopic = s.topicComposer.ComposeDirectTopic(getRoutingFromPartyID(s.party.PartyID()))
 	} else {
+		logger.Info("routing", "routing", getRoutingFromPartyID(s.party.PartyID()))
 		selfDirectTopic = s.topicComposer.ComposeDirectTopic(getRoutingFromPartyID(s.party.PartyID()))
 	}
 	broadcast := func() {

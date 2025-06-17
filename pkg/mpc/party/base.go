@@ -61,10 +61,18 @@ func (p *party) ErrCh() chan error {
 }
 
 // runParty handles the common party execution loop
-func runParty[T any](s PartyInterface, ctx context.Context, party tss.Party, send func(tss.Message), endCh chan T, finish func([]byte)) {
+func runParty[T any](
+	s PartyInterface,
+	ctx context.Context,
+	party tss.Party,
+	send func(tss.Message),
+	endCh chan T,
+	finish func([]byte),
+	keyType string,
+) {
 	// Start the party in a goroutine
 	go func() {
-		logger.Info("Starting party", "partyID", s.PartyID().String())
+		logger.Info("Starting party", "partyID", s.PartyID().String(), "keyType", keyType)
 		if err := party.Start(); err != nil {
 			s.ErrCh() <- err
 			return

@@ -62,7 +62,7 @@ func (n *natsPubSub) Subscribe(topic string, handler func(msg *nats.Msg)) (Subsc
 	// TODO: Handle subscription
 	// handle more fields in msg
 	sub, err := n.natsConn.Subscribe(topic, func(msg *nats.Msg) {
-		handler(msg)
+		go handler(msg)
 	})
 	if err != nil {
 		return nil, err

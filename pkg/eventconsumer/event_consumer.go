@@ -25,7 +25,8 @@ const (
 	MPCResharingEvent = "mpc:reshare"
 
 	// Default version for keygen
-	DefaultVersion int = 0
+	DefaultVersion int = 1
+	KeyGenTimeout      = 90 * time.Second
 )
 
 type EventConsumer interface {
@@ -104,6 +105,7 @@ func (ec *eventConsumer) Run() {
 
 func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(natMsg *nats.Msg) {
+		logger.Info("Received key generation event", "msg", string(natMsg.Data))
 		raw := natMsg.Data
 		var msg types.GenerateKeyMessage
 		err := json.Unmarshal(raw, &msg)
@@ -111,7 +113,6 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 			logger.Error("Failed to unmarshal signing message", err)
 			return
 		}
-		logger.Info("Received key generation event", "msg", msg)
 
 		err = ec.identityStore.VerifyInitiatorMessage(&msg)
 		if err != nil {
@@ -132,34 +133,34 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 			return
 		}
 
-		// Start listening for messages first
-		go ecdsaSession.Listen(ec.node.ID(), false)
-		go eddsaSession.Listen(ec.node.ID(), false)
+		// // Start listening for messages first
+		ecdsaSession.Listen(ec.node.ID(), false)
+		eddsaSession.Listen(ec.node.ID(), false)
 		successEvent := &event.KeygenSuccessEvent{
 			WalletID: walletID,
 		}
 
-		var wg sync.WaitGroup
-		wg.Add(2)
-
-		// Handle errors from the session
+		parentCtx, parentCancel := context.WithCancel(context.Background())
+		defer parentCancel()
 		go func() {
 			for {
 				select {
+				case <-parentCtx.Done():
+					return
 				case err := <-ecdsaSession.ErrCh():
 					logger.Error("Error from ECDSA session", err)
+					parentCancel()
 					return
 				case err := <-eddsaSession.ErrCh():
 					logger.Error("Error from EDDSA session", err)
+					parentCancel()
 					return
 				}
 			}
 		}()
-
 		// Start the key generation process
-		ecdsaCtx, ecdsaCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		go ecdsaSession.StartKeygen(ecdsaCtx, ecdsaSession.Send, func(data []byte) {
-			ecdsaCancel()
+		ecdsaCtx, ecdsaCancel := context.WithTimeout(parentCtx, KeyGenTimeout)
+		ecdsaSession.StartKeygen(ecdsaCtx, ecdsaSession.Send, func(data []byte) {
 			ecdsaSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, DefaultVersion, data)
 			ecdsaPubKey, err := ecdsaSession.GetPublicKey(data)
 			if err != nil {
@@ -167,12 +168,12 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 				return
 			}
 			successEvent.ECDSAPubKey = ecdsaPubKey
-			wg.Done()
+			logger.Info("ECDSA Key gen success for wallet", "walletID", walletID)
+			ecdsaCancel()
 		})
 
-		eddsaCtx, eddsaCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		go eddsaSession.StartKeygen(eddsaCtx, eddsaSession.Send, func(data []byte) {
-			eddsaCancel()
+		eddsaCtx, eddsaCancel := context.WithTimeout(parentCtx, KeyGenTimeout)
+		eddsaSession.StartKeygen(eddsaCtx, eddsaSession.Send, func(data []byte) {
 			eddsaSession.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, DefaultVersion, data)
 			eddsaPubKey, err := eddsaSession.GetPublicKey(data)
 			if err != nil {
@@ -180,10 +181,9 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 				return
 			}
 			successEvent.EDDSAPubKey = eddsaPubKey
-			wg.Done()
+			logger.Info("EDDSA Key gen success for wallet", "walletID", walletID)
+			eddsaCancel()
 		})
-
-		wg.Wait()
 
 		// Marshal the success event
 		successEventBytes, err := json.Marshal(successEvent)
@@ -192,7 +192,8 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 			return
 		}
 
-		err = ec.genKeySucecssQueue.Enqueue(event.KeygenSuccessEventTopic, successEventBytes, &messaging.EnqueueOptions{
+		logger.Info("enqueue", "success Event", successEvent)
+		err = ec.genKeySucecssQueue.Enqueue(fmt.Sprintf("mpc.mpc_keygen_success.%s", walletID), successEventBytes, &messaging.EnqueueOptions{
 			IdempotententKey: fmt.Sprintf(event.TypeGenerateWalletSuccess, walletID),
 		})
 		if err != nil {
