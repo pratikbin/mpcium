@@ -120,7 +120,7 @@ func (n *Node) CreateSigningSession(keyType types.KeyType, walletID string, txID
 			n.kvstore,
 			n.keyinfoStore,
 		)
-		saveData, err := ecdsaSession.GetSaveData()
+		saveData, err := ecdsaSession.GetSaveData(partyVersion)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get save data: %w", err)
 		}
@@ -141,7 +141,7 @@ func (n *Node) CreateSigningSession(keyType types.KeyType, walletID string, txID
 			n.keyinfoStore,
 		)
 
-		saveData, err := eddsaSession.GetSaveData()
+		saveData, err := eddsaSession.GetSaveData(partyVersion)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get save data: %w", err)
 		}
@@ -175,7 +175,7 @@ func (n *Node) CreateResharingSession(isOldParty bool, keyType types.KeyType, wa
 		}
 		ecdsaSession := session.NewECDSASession(walletID, selfPartyID, partyIDs, threshold, *preparams, n.pubSub, n.direct, n.identityStore, n.kvstore, n.keyinfoStore)
 		if isOldParty {
-			saveData, err := ecdsaSession.GetSaveData()
+			saveData, err := ecdsaSession.GetSaveData(partyVersion)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get save data: %w", err)
 			}
@@ -194,7 +194,7 @@ func (n *Node) CreateResharingSession(isOldParty bool, keyType types.KeyType, wa
 		return ecdsaSession, nil
 	case types.KeyTypeEd25519:
 		eddsaSession := session.NewEDDSASession(walletID, selfPartyID, partyIDs, threshold, n.pubSub, n.direct, n.identityStore, n.kvstore, n.keyinfoStore)
-		saveData, err := eddsaSession.GetSaveData()
+		saveData, err := eddsaSession.GetSaveData(partyVersion)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get save data: %w", err)
 		}
