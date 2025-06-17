@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/bnb-chain/tss-lib/v2/common"
 	"github.com/bnb-chain/tss-lib/v2/eddsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/eddsa/resharing"
 	"github.com/bnb-chain/tss-lib/v2/eddsa/signing"
 	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/golang/protobuf/ptypes/any"
 	"google.golang.org/protobuf/proto"
 )
@@ -67,9 +69,21 @@ func (s *EDDSAParty) ClassifyMsg(msgBytes []byte) (uint8, bool, error) {
 
 func (s *EDDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
 	end := make(chan *keygen.LocalPartySaveData, 1)
+
+	// Measure time to initialize the party
+	initStart := time.Now()
 	params := tss.NewParameters(tss.Edwards(), tss.NewPeerContext(s.partyIDs), s.partyID, len(s.partyIDs), s.threshold)
 	party := keygen.NewLocalParty(params, s.outCh, end)
+	initElapsed := time.Since(initStart)
+
+	logger.Info("[Starting EDDSA] key generation", "walletID", s.walletID, "initElapsed", initElapsed)
+
+	// Measure time to run the party
+	runStart := time.Now()
 	runParty(s, ctx, party, send, end, finish)
+	runElapsed := time.Since(runStart)
+
+	logger.Info("[Finished EDDSA] key generation run", "walletID", s.walletID, "runElapsed", runElapsed)
 }
 
 func (s *EDDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte)) {
