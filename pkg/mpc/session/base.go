@@ -53,6 +53,7 @@ type Session interface {
 	Listen()
 	SaveKey(participantPeerIDs []string, threshold int, version int, data []byte) (err error)
 	ErrCh() chan error
+	Close()
 }
 
 type session struct {
@@ -209,7 +210,6 @@ func (s *session) SaveKey(participantPeerIDs []string, threshold int, version in
 		s.errCh <- fmt.Errorf("failed to save key: %w", err)
 		return
 	}
-	logger.Info("Saved key", "walletID", s.walletID, "threshold", threshold, "version", version, "data", len(data))
 	return
 }
 
@@ -225,6 +225,29 @@ func (s *session) GetSaveData() ([]byte, error) {
 		return nil, fmt.Errorf("failed to get key: %w", err)
 	}
 	return data, nil
+}
+
+func (s *session) Close() {
+	// Close subscriptions first
+	if s.broadcastSub != nil {
+		s.broadcastSub.Unsubscribe()
+	}
+	if s.directSub != nil {
+		s.directSub.Unsubscribe()
+	}
+
+	// Close party
+	if s.party != nil {
+		s.party.Close()
+	}
+
+	// Close error channel last
+	select {
+	case <-s.errCh:
+		// Channel already closed
+	default:
+		close(s.errCh)
+	}
 }
 
 // receive is a helper function that receives a message from the party
