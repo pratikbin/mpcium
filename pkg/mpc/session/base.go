@@ -44,7 +44,7 @@ type Session interface {
 	StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte))
 	StartResharing(ctx context.Context, oldPartyIDs []*tss.PartyID, newPartyIDs []*tss.PartyID, oldThreshold int, newThreshold int, send func(tss.Message), finish func([]byte))
 
-	GetSaveData() ([]byte, error)
+	GetSaveData(version int) ([]byte, error)
 	GetPublicKey(data []byte) ([]byte, error)
 	VerifySignature(msg []byte, signature []byte) (*common.SignatureData, error)
 
@@ -205,7 +205,7 @@ func (s *session) SaveKey(participantPeerIDs []string, threshold int, version in
 		return
 	}
 
-	err = s.kvstore.Put(composeKey, data)
+	err = s.kvstore.Put(fmt.Sprintf("%s-%d", composeKey, version), data)
 	if err != nil {
 		s.errCh <- fmt.Errorf("failed to save key: %w", err)
 		return
@@ -218,9 +218,9 @@ func (s *session) SetSaveData(saveBytes []byte) {
 }
 
 // GetSaveData gets the key from the kvstore
-func (s *session) GetSaveData() ([]byte, error) {
+func (s *session) GetSaveData(version int) ([]byte, error) {
 	composeKey := s.composeKey(s.walletID)
-	data, err := s.kvstore.Get(composeKey)
+	data, err := s.kvstore.Get(fmt.Sprintf("%s-%d", composeKey, version))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get key: %w", err)
 	}
