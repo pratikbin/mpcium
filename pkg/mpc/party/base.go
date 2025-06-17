@@ -10,7 +10,7 @@ import (
 	"github.com/fystack/mpcium/pkg/types"
 )
 
-type PartyInterface interface {
+type Party interface {
 	StartKeygen(ctx context.Context, send func(tss.Message), onComplete func([]byte))
 	StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), onComplete func([]byte))
 	StartResharing(
@@ -77,7 +77,7 @@ func (p *party) Close() {
 
 // runParty handles the common party execution loop
 func runParty[T any](
-	s PartyInterface,
+	s Party,
 	ctx context.Context,
 	party tss.Party,
 	send func(tss.Message),

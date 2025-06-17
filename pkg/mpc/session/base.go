@@ -58,7 +58,7 @@ type Session interface {
 
 type session struct {
 	walletID string
-	party    party.PartyInterface
+	party    party.Party
 
 	broadcastSub messaging.Subscription
 	directSub    messaging.Subscription
