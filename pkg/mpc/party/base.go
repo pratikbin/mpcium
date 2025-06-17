@@ -23,6 +23,7 @@ type PartyInterface interface {
 	InCh() chan types.TssMessage
 	OutCh() chan tss.Message
 	ErrCh() chan error
+	Close()
 }
 
 type party struct {
@@ -59,6 +60,11 @@ func (p *party) OutCh() chan tss.Message {
 
 func (p *party) ErrCh() chan error {
 	return p.errCh
+}
+
+func (p *party) Close() {
+	close(p.inCh)
+	close(p.outCh)
 }
 
 // runParty handles the common party execution loop
