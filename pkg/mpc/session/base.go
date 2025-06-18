@@ -279,8 +279,14 @@ func (s *session) SetSaveData(saveBytes []byte) {
 
 // GetSaveData gets the key from the kvstore
 func (s *session) GetSaveData(version int) ([]byte, error) {
+	var key string
 	composeKey := s.composeKey(s.walletID)
-	data, err := s.kvstore.Get(fmt.Sprintf("%s-%d", composeKey, version))
+	if version == 0 {
+		key = composeKey
+	} else {
+		key = fmt.Sprintf("%s-%d", composeKey, version)
+	}
+	data, err := s.kvstore.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get key: %w", err)
 	}
