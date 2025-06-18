@@ -104,7 +104,7 @@ func (ec *eventConsumer) Run() {
 }
 func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(natMsg *nats.Msg) {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		if err := ec.handleKeyGenerationEvent(ctx, natMsg.Data); err != nil {
@@ -376,7 +376,15 @@ func (ec *eventConsumer) handleReshareEvent(ctx context.Context, raw []byte) err
 	}
 
 	go oldSession.Listen()
+	err = oldSession.WaitReady(ctx)
+	if err != nil {
+		return fmt.Errorf("wait for old session ready: %w", err)
+	}
 	go newSession.Listen()
+	err = newSession.WaitReady(ctx)
+	if err != nil {
+		return fmt.Errorf("wait for new session ready: %w", err)
+	}
 
 	successEvent := &event.ResharingSuccessEvent{WalletID: msg.WalletID}
 
