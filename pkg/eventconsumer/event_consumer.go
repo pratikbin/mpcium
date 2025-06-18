@@ -144,7 +144,8 @@ func (ec *eventConsumer) handleKeyGenerationEvent(ctx context.Context, raw []byt
 
 		defer kgSession.Close()
 
-		go kgSession.Listen()
+		kgSession.Listen()
+		time.Sleep(1 * time.Second)
 		wg.Add(1)
 
 		go func(s session.Session, kt types.KeyType) {
