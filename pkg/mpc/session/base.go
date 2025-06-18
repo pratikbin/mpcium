@@ -51,6 +51,7 @@ type Session interface {
 	PartyIDs() []*tss.PartyID
 	Send(msg tss.Message)
 	Listen()
+	WaitReady(ctx context.Context) error
 	SaveKey(participantPeerIDs []string, threshold int, version int, data []byte) (err error)
 	ErrCh() chan error
 	Close()
@@ -72,8 +73,9 @@ type session struct {
 	topicComposer *TopicComposer
 	composeKey    KeyComposerFn
 
-	mu    sync.Mutex
-	errCh chan error
+	mu      sync.Mutex
+	errCh   chan error
+	readyCh chan struct{}
 }
 
 func NewSession(
@@ -94,6 +96,7 @@ func NewSession(
 		kvstore:       kvstore,
 		keyinfoStore:  keyinfoStore,
 		errCh:         errCh,
+		readyCh:       make(chan struct{}),
 	}
 }
 
@@ -160,7 +163,11 @@ func (s *session) Send(msg tss.Message) {
 // It subscribes to the broadcast and self direct topics
 func (s *session) Listen() {
 	selfDirectTopic := s.topicComposer.ComposeDirectTopic(getRoutingFromPartyID(s.party.PartyID()))
+	var wg sync.WaitGroup
+	wg.Add(2) // One for broadcast, one for direct
+
 	broadcast := func() {
+		defer wg.Done()
 		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(natMsg *nats.Msg) {
 			msg := natMsg.Data
 			s.receive(msg)
@@ -175,6 +182,7 @@ func (s *session) Listen() {
 	}
 
 	direct := func() {
+		defer wg.Done()
 		sub, err := s.direct.Listen(selfDirectTopic, func(msg []byte) {
 			s.receive(msg)
 		})
@@ -189,6 +197,22 @@ func (s *session) Listen() {
 
 	go broadcast()
 	go direct()
+
+	// Wait for both subscriptions to be ready
+	go func() {
+		wg.Wait()
+		close(s.readyCh)
+	}()
+}
+
+// WaitReady waits for the session to be ready
+func (s *session) WaitReady(ctx context.Context) error {
+	select {
+	case <-s.readyCh:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // SaveKey saves the key to the keyinfo store and the kvstore

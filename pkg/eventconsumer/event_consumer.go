@@ -145,7 +145,10 @@ func (ec *eventConsumer) handleKeyGenerationEvent(ctx context.Context, raw []byt
 		defer kgSession.Close()
 
 		kgSession.Listen()
-		time.Sleep(1 * time.Second)
+		err = kgSession.WaitReady(ctx)
+		if err != nil {
+			return fmt.Errorf("wait for session ready: %w", err)
+		}
 		wg.Add(1)
 
 		go func(s session.Session, kt types.KeyType) {
