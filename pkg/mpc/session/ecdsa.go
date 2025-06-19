@@ -13,6 +13,7 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/fystack/mpcium/pkg/encoding"
 	"github.com/fystack/mpcium/pkg/identity"
+	"github.com/fystack/mpcium/pkg/infra"
 	"github.com/fystack/mpcium/pkg/keyinfo"
 	"github.com/fystack/mpcium/pkg/kvstore"
 	"github.com/fystack/mpcium/pkg/messaging"
@@ -23,8 +24,20 @@ type ECDSASession struct {
 	*session
 }
 
-func NewECDSASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int, preParams keygen.LocalPreParams, pubSub messaging.PubSub, direct messaging.DirectMessaging, identityStore identity.Store, kvstore kvstore.KVStore, keyinfoStore keyinfo.Store) *ECDSASession {
-	s := NewSession(PurposeKeygen, walletID, pubSub, direct, identityStore, kvstore, keyinfoStore)
+func NewECDSASession(
+	walletID string,
+	partyID *tss.PartyID,
+	partyIDs []*tss.PartyID,
+	threshold int,
+	preParams keygen.LocalPreParams,
+	pubSub messaging.PubSub,
+	direct messaging.DirectMessaging,
+	identityStore identity.Store,
+	kvstore kvstore.KVStore,
+	keyinfoStore keyinfo.Store,
+	consulKV infra.ConsulKV,
+) *ECDSASession {
+	s := NewSession(PurposeKeygen, walletID, pubSub, direct, identityStore, kvstore, keyinfoStore, consulKV)
 	s.party = party.NewECDSAParty(walletID, partyID, partyIDs, threshold, preParams, s.errCh)
 	s.topicComposer = &TopicComposer{
 		ComposeBroadcastTopic: func() string {

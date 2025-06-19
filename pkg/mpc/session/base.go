@@ -6,16 +6,19 @@ import (
 	"math/big"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/bnb-chain/tss-lib/v2/common"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/fystack/mpcium/pkg/identity"
+	"github.com/fystack/mpcium/pkg/infra"
 	"github.com/fystack/mpcium/pkg/keyinfo"
 	"github.com/fystack/mpcium/pkg/kvstore"
 	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/fystack/mpcium/pkg/messaging"
 	"github.com/fystack/mpcium/pkg/mpc/party"
 	"github.com/fystack/mpcium/pkg/types"
+	"github.com/hashicorp/consul/api"
 	"github.com/nats-io/nats.go"
 )
 
@@ -60,6 +63,7 @@ type Session interface {
 	Send(msg tss.Message)
 	Listen()
 	SaveKey(participantPeerIDs []string, threshold int, version int, data []byte) (err error)
+	WaitForReady(ctx context.Context, sessionID string) error
 	ErrCh() chan error
 	Close()
 }
@@ -79,6 +83,7 @@ type session struct {
 
 	topicComposer *TopicComposer
 	composeKey    KeyComposerFn
+	consulKV      infra.ConsulKV
 
 	mu    sync.Mutex
 	errCh chan error
@@ -92,6 +97,7 @@ func NewSession(
 	identityStore identity.Store,
 	kvstore kvstore.KVStore,
 	keyinfoStore keyinfo.Store,
+	consulKV infra.ConsulKV,
 ) *session {
 	errCh := make(chan error, 1000)
 	return &session{
@@ -102,6 +108,7 @@ func NewSession(
 		kvstore:       kvstore,
 		keyinfoStore:  keyinfoStore,
 		errCh:         errCh,
+		consulKV:      consulKV,
 	}
 }
 
@@ -111,6 +118,43 @@ func (s *session) PartyIDs() []*tss.PartyID {
 
 func (s *session) ErrCh() chan error {
 	return s.errCh
+}
+
+func (s *session) WaitForReady(ctx context.Context, sessionID string) error {
+	// build our Consul prefix
+	prefix := fmt.Sprintf("tss-ready/%s/%s/", s.walletID, sessionID)
+
+	// 1) publish our ready flag
+	myKey := prefix + s.party.PartyID().String()
+	if _, err := s.consulKV.Put(&api.KVPair{
+		Key:   myKey,
+		Value: []byte("true"),
+	}, nil); err != nil {
+		return fmt.Errorf("failed to write ready flag: %w", err)
+	}
+
+	// 2) poll until we see everyone
+	total := len(s.party.PartyIDs())
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			pairs, _, err := s.consulKV.List(prefix, nil)
+			if err != nil {
+				logger.Error("error listing readiness keys", err)
+				continue
+			}
+			if len(pairs) >= total {
+				logger.Info("[READY] peers ready", "have", len(pairs), "need", total, "walletID", s.walletID)
+				return nil
+			}
+			logger.Info("[READY]  Waiting for peers ready", "wallet", s.walletID, "have", len(pairs), "need", total)
+		}
+	}
 }
 
 // Send is a wrapper around the party's Send method

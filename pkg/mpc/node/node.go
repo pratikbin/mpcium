@@ -10,6 +10,7 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/fystack/mpcium/pkg/identity"
+	"github.com/fystack/mpcium/pkg/infra"
 	"github.com/fystack/mpcium/pkg/keyinfo"
 	"github.com/fystack/mpcium/pkg/kvstore"
 	"github.com/fystack/mpcium/pkg/logger"
@@ -33,9 +34,20 @@ type Node struct {
 	identityStore identity.Store
 
 	peerRegistry *registry
+	consulKV     infra.ConsulKV
 }
 
-func NewNode(nodeID string, peerIDs []string, pubSub messaging.PubSub, direct messaging.DirectMessaging, kvstore kvstore.KVStore, keyinfoStore keyinfo.Store, identityStore identity.Store, peerRegistry *registry) *Node {
+func NewNode(
+	nodeID string,
+	peerIDs []string,
+	pubSub messaging.PubSub,
+	direct messaging.DirectMessaging,
+	kvstore kvstore.KVStore,
+	keyinfoStore keyinfo.Store,
+	identityStore identity.Store,
+	peerRegistry *registry,
+	consulKV infra.ConsulKV,
+) *Node {
 	go peerRegistry.WatchPeersReady()
 
 	return &Node{
@@ -47,6 +59,7 @@ func NewNode(nodeID string, peerIDs []string, pubSub messaging.PubSub, direct me
 		keyinfoStore:  keyinfoStore,
 		identityStore: identityStore,
 		peerRegistry:  peerRegistry,
+		consulKV:      consulKV,
 	}
 }
 
@@ -78,6 +91,7 @@ func (n *Node) CreateKeygenSession(keyType types.KeyType, walletID string, thres
 			n.identityStore,
 			n.kvstore,
 			n.keyinfoStore,
+			n.consulKV,
 		)
 
 		return ecdsaSession, nil
@@ -92,6 +106,7 @@ func (n *Node) CreateKeygenSession(keyType types.KeyType, walletID string, thres
 			n.identityStore,
 			n.kvstore,
 			n.keyinfoStore,
+			n.consulKV,
 		)
 		return eddsaSession, nil
 	default:
@@ -119,6 +134,7 @@ func (n *Node) CreateSigningSession(keyType types.KeyType, walletID string, txID
 			n.identityStore,
 			n.kvstore,
 			n.keyinfoStore,
+			n.consulKV,
 		)
 		saveData, err := ecdsaSession.GetSaveData(partyVersion)
 		if err != nil {
@@ -139,6 +155,7 @@ func (n *Node) CreateSigningSession(keyType types.KeyType, walletID string, txID
 			n.identityStore,
 			n.kvstore,
 			n.keyinfoStore,
+			n.consulKV,
 		)
 
 		saveData, err := eddsaSession.GetSaveData(partyVersion)
@@ -173,7 +190,19 @@ func (n *Node) CreateResharingSession(isOldParty bool, keyType types.KeyType, wa
 		if err != nil {
 			return nil, fmt.Errorf("failed to get preparams: %w", err)
 		}
-		ecdsaSession := session.NewECDSASession(walletID, selfPartyID, partyIDs, threshold, *preparams, n.pubSub, n.direct, n.identityStore, n.kvstore, n.keyinfoStore)
+		ecdsaSession := session.NewECDSASession(
+			walletID,
+			selfPartyID,
+			partyIDs,
+			threshold,
+			*preparams,
+			n.pubSub,
+			n.direct,
+			n.identityStore,
+			n.kvstore,
+			n.keyinfoStore,
+			n.consulKV,
+		)
 		if isOldParty {
 			saveData, err := ecdsaSession.GetSaveData(partyVersion)
 			if err != nil {
@@ -193,7 +222,18 @@ func (n *Node) CreateResharingSession(isOldParty bool, keyType types.KeyType, wa
 		}
 		return ecdsaSession, nil
 	case types.KeyTypeEd25519:
-		eddsaSession := session.NewEDDSASession(walletID, selfPartyID, partyIDs, threshold, n.pubSub, n.direct, n.identityStore, n.kvstore, n.keyinfoStore)
+		eddsaSession := session.NewEDDSASession(
+			walletID,
+			selfPartyID,
+			partyIDs,
+			threshold,
+			n.pubSub,
+			n.direct,
+			n.identityStore,
+			n.kvstore,
+			n.keyinfoStore,
+			n.consulKV,
+		)
 		saveData, err := eddsaSession.GetSaveData(partyVersion)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get save data: %w", err)

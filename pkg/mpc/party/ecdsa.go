@@ -14,14 +14,17 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/fystack/mpcium/pkg/logger"
+	"github.com/fystack/mpcium/pkg/monitoring"
 	"github.com/golang/protobuf/ptypes/any"
 	"google.golang.org/protobuf/proto"
 )
 
 type ECDSAParty struct {
 	party
-	preParams keygen.LocalPreParams
-	saveData  *keygen.LocalPartySaveData
+	preParams        keygen.LocalPreParams
+	saveData         *keygen.LocalPartySaveData
+	KeygenStart      time.Time
+	KeygenCompletion time.Time
 }
 
 func NewECDSAParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int,
@@ -70,17 +73,37 @@ func (s *ECDSAParty) ClassifyMsg(msgBytes []byte) (uint8, bool, error) {
 func (s *ECDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
 	end := make(chan *keygen.LocalPartySaveData, 1)
 	// Time the initialization of TSS parameters and party
-	initStart := time.Now()
-	initElapsed := time.Since(initStart)
+	s.KeygenStart = time.Now()
 	params := tss.NewParameters(tss.S256(), tss.NewPeerContext(s.partyIDs), s.partyID, len(s.partyIDs), s.threshold)
 	party := keygen.NewLocalParty(params, s.outCh, end, s.preParams)
-	logger.Info("[Starting ECDSA] key generation", "walletID", s.walletID, "initElapsed", initElapsed.Milliseconds())
+	initElapsed := time.Since(s.KeygenStart)
+	logger.Info("[Starting ECDSA] key generation",
+		"walletID", s.walletID,
+		"initElapsed", initElapsed.Milliseconds(),
+		"startTime", s.KeygenStart.Format(time.RFC3339),
+	)
 
 	// Time the runParty execution
 	runStart := time.Now()
 	runParty(s, ctx, party, send, end, finish)
+	s.KeygenCompletion = time.Now()
 	runElapsed := time.Since(runStart)
-	logger.Info("[Finished ECDSA] key generation run", "walletID", s.walletID, "runElapsed", runElapsed.Milliseconds())
+	logger.Info("[Finished ECDSA] key generation run",
+		"walletID", s.walletID,
+		"runElapsed", runElapsed.Milliseconds(),
+		"completionTime", s.KeygenCompletion.Format(time.RFC3339),
+	)
+
+	// Record the completion event
+	monitoring.RecordKeygenCompletion(monitoring.KeygenTimestamps{
+		WalletID:       s.walletID,
+		NodeID:         s.partyID.Id,
+		KeyType:        "ECDSA",
+		StartTime:      s.KeygenStart,
+		CompletionTime: s.KeygenCompletion,
+		InitDurationMs: initElapsed.Milliseconds(),
+		RunDurationMs:  runElapsed.Milliseconds(),
+	})
 }
 
 func (s *ECDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte)) {

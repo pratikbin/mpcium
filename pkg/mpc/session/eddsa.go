@@ -12,6 +12,7 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
 	"github.com/fystack/mpcium/pkg/identity"
+	"github.com/fystack/mpcium/pkg/infra"
 	"github.com/fystack/mpcium/pkg/keyinfo"
 	"github.com/fystack/mpcium/pkg/kvstore"
 	"github.com/fystack/mpcium/pkg/messaging"
@@ -22,8 +23,19 @@ type EDDSASession struct {
 	*session
 }
 
-func NewEDDSASession(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int, pubSub messaging.PubSub, direct messaging.DirectMessaging, identityStore identity.Store, kvstore kvstore.KVStore, keyinfoStore keyinfo.Store) *EDDSASession {
-	s := NewSession(PurposeKeygen, walletID, pubSub, direct, identityStore, kvstore, keyinfoStore)
+func NewEDDSASession(
+	walletID string,
+	partyID *tss.PartyID,
+	partyIDs []*tss.PartyID,
+	threshold int,
+	pubSub messaging.PubSub,
+	direct messaging.DirectMessaging,
+	identityStore identity.Store,
+	kvstore kvstore.KVStore,
+	keyinfoStore keyinfo.Store,
+	consulKV infra.ConsulKV,
+) *EDDSASession {
+	s := NewSession(PurposeKeygen, walletID, pubSub, direct, identityStore, kvstore, keyinfoStore, consulKV)
 	s.party = party.NewEDDSAParty(walletID, partyID, partyIDs, threshold, nil, nil, s.errCh)
 	s.topicComposer = &TopicComposer{
 		ComposeBroadcastTopic: func() string {

@@ -156,6 +156,7 @@ func runNode(ctx context.Context, c *cli.Command) error {
 		keyinfoStore,
 		identityStore,
 		peerRegistry,
+		consulClient.KV(),
 	)
 	// Preload preparams for the first time
 	mpcNode.PreloadPreParams()
