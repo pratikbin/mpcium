@@ -10,10 +10,18 @@ import (
 	"github.com/fystack/mpcium/pkg/types"
 )
 
-type PartyInterface interface {
-	StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte))
-	StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte))
-	StartResharing(ctx context.Context, oldPartyIDs, newPartyIDs []*tss.PartyID, oldThreshold, newThreshold int, send func(tss.Message), finish func([]byte))
+type Party interface {
+	StartKeygen(ctx context.Context, send func(tss.Message), onComplete func([]byte))
+	StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), onComplete func([]byte))
+	StartResharing(
+		ctx context.Context,
+		oldPartyIDs,
+		newPartyIDs []*tss.PartyID,
+		oldThreshold,
+		newThreshold int,
+		send func(tss.Message),
+		onComplete func([]byte),
+	)
 
 	PartyID() *tss.PartyID
 	PartyIDs() []*tss.PartyID
@@ -68,7 +76,14 @@ func (p *party) Close() {
 }
 
 // runParty handles the common party execution loop
-func runParty[T any](s PartyInterface, ctx context.Context, party tss.Party, send func(tss.Message), endCh chan T, finish func([]byte)) {
+func runParty[T any](
+	s Party,
+	ctx context.Context,
+	party tss.Party,
+	send func(tss.Message),
+	endCh chan T,
+	onComplete func([]byte),
+) {
 	// Start the party in a goroutine to handle errors
 	go func() {
 		logger.Info("Starting party", "partyID", s.PartyID().String())
@@ -92,12 +107,12 @@ func runParty[T any](s PartyInterface, ctx context.Context, party tss.Party, sen
 		case out := <-s.OutCh():
 			send(out)
 		case result := <-endCh:
-			bz, err := json.Marshal(result)
+			bytes, err := json.Marshal(result)
 			if err != nil {
 				s.ErrCh() <- err
 				return
 			}
-			finish(bz)
+			onComplete(bytes)
 			return
 		}
 	}
