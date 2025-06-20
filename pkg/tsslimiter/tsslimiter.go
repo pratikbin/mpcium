@@ -36,13 +36,13 @@ const (
 //
 //     Note: These values are conservative to maintain low latency and avoid timeouts.
 var sessionCosts = map[SessionType]int{
-	SessionKeygenECDSA:    100, // Full core
+	SessionKeygenECDSA:    75, // Full core
 	SessionReshareECDSA:   70,
 	SessionSignECDSA:      40,
 	SessionKeygenEDDSA:    25, // ~25% of core
 	SessionReshareEDDSA:   20,
 	SessionSignEDDSA:      15,
-	SessionKeygenCombined: 125, // ECDSA (100) + EDDSA (25)
+	SessionKeygenCombined: 100, // ECDSA (100) + EDDSA (25)
 }
 
 type Limiter interface {

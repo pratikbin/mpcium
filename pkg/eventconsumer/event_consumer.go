@@ -16,6 +16,7 @@ import (
 	"github.com/fystack/mpcium/pkg/messaging"
 	"github.com/fystack/mpcium/pkg/monitoring"
 	"github.com/fystack/mpcium/pkg/mpc/node"
+	"github.com/fystack/mpcium/pkg/mpc/session"
 	"github.com/fystack/mpcium/pkg/tsslimiter"
 	"github.com/fystack/mpcium/pkg/types"
 	"github.com/nats-io/nats.go"
@@ -121,17 +122,18 @@ func (ec *eventConsumer) Run() {
 func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 	// Create session limiter channel with capacity 5
 	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(natMsg *nats.Msg) {
-		logger.Info("Received key generation event", "subject", natMsg.Subject)
-		// This blocks if max sessions are already running
-		// go func(data []byte) {
-		go func(data []byte) {
-			// Ack the message immediately to prevent redelivery from JetStream. This is critical.
+		logger.Info("Received key generation event, enqueuing combined job", "subject", natMsg.Subject)
 
-			if err := ec.handleKeyGenerationEvent(context.Background(), data); err != nil {
-				logger.Error("Failed to handle key generation event", err)
-			}
-		}(natMsg.Data)
-		// }(natMsg.Data)
+		job := tsslimiter.SessionJob{
+			Type: tsslimiter.SessionKeygenCombined,
+			Run: func() {
+				// Ack the message immediately to prevent redelivery from JetStream. This is critical.
+				if err := ec.handleKeyGenerationEvent(context.Background(), natMsg.Data); err != nil {
+					logger.Error("Failed to handle key generation event", err)
+				}
+			},
+		}
+		ec.limiterQueue.Enqueue(job)
 	})
 
 	if err != nil {
@@ -143,6 +145,9 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 }
 
 func (ec *eventConsumer) handleKeyGenerationEvent(parentCtx context.Context, raw []byte) error {
+	handlerCtx, handlerCancel := context.WithTimeout(parentCtx, HandlerTimeout)
+	defer handlerCancel()
+
 	// 1) decode and verify
 	var msg types.GenerateKeyMessage
 	if err := json.Unmarshal(raw, &msg); err != nil {
@@ -153,102 +158,75 @@ func (ec *eventConsumer) handleKeyGenerationEvent(parentCtx context.Context, raw
 	}
 
 	walletID := msg.WalletID
+	logger.Info("Processing combined key generation job", "walletID", walletID)
 	successEvent := &event.KeygenSuccessEvent{WalletID: walletID}
 
-	// 2) give this handler its own timeout
-	handlerCtx, handlerCancel := context.WithTimeout(parentCtx, HandlerTimeout)
-	defer handlerCancel()
+	// 2) prepare both sessions
+	s0, err := ec.node.CreateKeygenSession(types.KeyTypeSecp256k1, walletID, ec.mpcThreshold, ec.genKeySuccessQueue)
+	if err != nil {
+		return fmt.Errorf("create ECDSA session: %w", err)
+	}
+	defer s0.Close()
 
-	// wait for the sessions to return (even if they timed out)
+	s1, err := ec.node.CreateKeygenSession(types.KeyTypeEd25519, walletID, ec.mpcThreshold, ec.genKeySuccessQueue)
+	if err != nil {
+		s0.Close()
+		return fmt.Errorf("create EDDSA session: %w", err)
+	}
+	defer s1.Close()
+
+	s0.Listen()
+	s1.Listen()
+
+	// 3) Start both key generation routines and wait for them to complete
 	var wg sync.WaitGroup
-	// wait for *both* callbacks to fire before publishing
-	var cbWg sync.WaitGroup
-	cbWg.Add(2)
-
 	var eventMutex sync.Mutex
+	wg.Add(2)
 
-	// 3) enqueue ECDSA & EDDSA jobs
-	for _, keyType := range []types.KeyType{types.KeyTypeSecp256k1, types.KeyTypeEd25519} {
-		keyType := keyType
+	runKeygen := func(s session.Session, keyType types.KeyType) {
+		defer wg.Done()
+		sessionCtx, sessionCancel := context.WithTimeout(handlerCtx, SessionTimeout)
+		defer sessionCancel()
 
-		s, err := ec.node.CreateKeygenSession(keyType, walletID, ec.mpcThreshold, ec.genKeySuccessQueue)
-		if err != nil {
-			return fmt.Errorf("create %v session: %w", keyType, err)
-		}
-		s.Listen()
+		s.StartKeygen(sessionCtx, s.Send, func(data []byte) {
+			logger.Info("[callback] StartKeygen fired", "walletID", walletID, "keyType", keyType)
+			if err := s.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, DefaultVersion, data); err != nil {
+				logger.Error("Failed to save key", err, "walletID", walletID, "keyType", keyType)
+			}
 
-		wg.Add(1)
-		run := func() {
-			defer wg.Done()
-			defer s.Close()
-
-			// give each session its own shorter timeout
-			sessionCtx, sessionCancel := context.WithTimeout(handlerCtx, SessionTimeout)
-			defer sessionCancel()
-
-			s.StartKeygen(sessionCtx, s.Send, func(data []byte) {
-				defer cbWg.Done() // signal that this keyType actually called back
-
-				logger.Info("[callback] StartKeygen fired", "walletID", walletID, "keyType", keyType)
-
-				// save the share
-				if err := s.SaveKey(
-					ec.node.GetReadyPeersIncludeSelf(),
-					ec.mpcThreshold,
-					DefaultVersion,
-					data,
-				); err != nil {
-					logger.Error("Failed to save key", err, "walletID", walletID, "keyType", keyType)
+			if pubKey, err := s.GetPublicKey(data); err == nil {
+				eventMutex.Lock()
+				switch keyType {
+				case types.KeyTypeSecp256k1:
+					successEvent.ECDSAPubKey = pubKey
+				case types.KeyTypeEd25519:
+					successEvent.EDDSAPubKey = pubKey
 				}
-
-				// extract & record the pubkey
-				if pubKey, err := s.GetPublicKey(data); err == nil {
-					eventMutex.Lock()
-					switch keyType {
-					case types.KeyTypeSecp256k1:
-						successEvent.ECDSAPubKey = pubKey
-					case types.KeyTypeEd25519:
-						successEvent.EDDSAPubKey = pubKey
-					}
-					eventMutex.Unlock()
-				} else {
-					logger.Error("Failed to get public key", err, "walletID", walletID, "keyType", keyType)
-				}
-			})
-		}
-
-		var sessionType tsslimiter.SessionType
-		if keyType == types.KeyTypeSecp256k1 {
-			sessionType = tsslimiter.SessionKeygenECDSA
-		} else {
-			sessionType = tsslimiter.SessionKeygenEDDSA
-		}
-
-		ec.limiterQueue.Enqueue(tsslimiter.SessionJob{
-			Type: sessionType,
-			Run:  run,
+				eventMutex.Unlock()
+			} else {
+				logger.Error("Failed to get public key", err, "walletID", walletID, "keyType", keyType)
+			}
 		})
 	}
 
-	// 4) wait for both session goroutines to return
-	wg.Wait()
+	go runKeygen(s0, types.KeyTypeSecp256k1)
+	go runKeygen(s1, types.KeyTypeEd25519)
 
-	// 5) now wait for both callbacks (or handler timeout)
-	doneCb := make(chan struct{})
+	doneCh := make(chan struct{})
 	go func() {
-		cbWg.Wait()
-		close(doneCb)
+		wg.Wait()
+		close(doneCh)
 	}()
 
 	select {
 	case <-handlerCtx.Done():
-		logger.Warn("Keygen callbacks did not all fire before timeout", "walletID", walletID)
+		logger.Warn("Keygen timed out while waiting for MPC sessions to complete", "walletID", walletID, "error", handlerCtx.Err())
 		return handlerCtx.Err()
-	case <-doneCb:
-		// both callbacks have run
+	case <-doneCh:
+		logger.Info("Both key generation sessions completed.", "walletID", walletID)
 	}
 
-	// 6) marshal & publish success
+	// 4) marshal & publish success
 	successBytes, err := json.Marshal(successEvent)
 	if err != nil {
 		return fmt.Errorf("marshal success event: %w", err)
