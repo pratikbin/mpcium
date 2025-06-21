@@ -1,7 +1,6 @@
 package tsslimiter
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/fystack/mpcium/pkg/logger"
@@ -64,15 +63,15 @@ func (q *WeightedQueue) run() {
 			logger.Info("Before Acquire", "usedPoints", usedBefore, "maxPoints", max, "pendingJobs", len(q.queue))
 
 			// Block until we can acquire budget
-			ok := q.limiter.TryAcquire(job.Type)
-			if !ok {
-				logger.Info("Failed to Acquire", "jobType", job.Type, "name", job.Name)
-				// Notify via OnError callback if provided
-				if job.OnError != nil {
-					job.OnError(fmt.Errorf("tsslimiter: failed to acquire budget for job type %v, job %s", job.Type, job.Name))
-				}
-				continue
-			}
+			q.limiter.Acquire(job.Type)
+			// if !ok {
+			// 	logger.Info("Failed to Acquire", "jobType", job.Type, "name", job.Name)
+			// 	// Notify via OnError callback if provided
+			// 	if job.OnError != nil {
+			// 		job.OnError(fmt.Errorf("tsslimiter: failed to acquire budget for job type %v, job %s", job.Type, job.Name))
+			// 	}
+			// 	continue
+			// }
 
 			// Log limiter state after acquire
 			usedAfter, _ := q.limiter.Stats()

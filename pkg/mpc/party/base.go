@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"math/big"
-	"time"
 
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/fystack/mpcium/pkg/logger"
@@ -93,24 +92,25 @@ func runParty[T any](
 ) {
 	// Start the party in a goroutine to handle errors
 	go func() {
-		start := time.Now()
 		logger.Info("[Starting] party", "walletID", s.WalletID())
 		if err := party.Start(); err != nil {
 			s.ErrCh() <- err
 			return
 		}
-		elapsed := time.Since(start)
-		logger.Info("[Closing] party", "walletID", s.WalletID(), "elapsed", elapsed.Milliseconds())
 	}()
 
 	// Main message handling loop
 	for {
 		select {
 		case <-ctx.Done():
+			if ctx.Err() == context.DeadlineExceeded {
+				s.ErrCh() <- ctx.Err()
+			}
 			return
 		case in := <-s.InCh():
 			ok, err := party.UpdateFromBytes(in.MsgBytes, in.From, in.IsBroadcast)
 			if !ok || err != nil {
+				logger.Error("UpdateFromBytes failed", err)
 				s.ErrCh() <- err
 				return
 			}

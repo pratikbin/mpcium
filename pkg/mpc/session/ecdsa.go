@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/bnb-chain/tss-lib/v2/common"
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
@@ -38,7 +39,7 @@ func NewECDSASession(
 	keyinfoStore keyinfo.Store,
 	consulKV infra.ConsulKV,
 ) *ECDSASession {
-	s := NewSession(PurposeKeygen, walletID, pubSub, direct, identityStore, kvstore, keyinfoStore, consulKV)
+	s := NewSession(CurveSecp256k1, walletID, pubSub, direct, identityStore, kvstore, keyinfoStore, consulKV)
 	s.party = party.NewECDSAParty(walletID, partyID, partyIDs, threshold, preParams, s.errCh)
 	s.topicComposer = &TopicComposer{
 		ComposeBroadcastTopic: func() string {
@@ -63,7 +64,10 @@ func (s *ECDSASession) StartKeygen(ctx context.Context, send func(tss.Message), 
 
 	ctx, span := s.tracer.Start(ctx, "ecdsa.StartKeygen")
 	defer span.End()
-	span.SetAttributes(attribute.String("wallet_id", s.walletID))
+	span.SetAttributes(
+		attribute.String("wallet_id", s.walletID),
+		attribute.String("timestamp", time.Now().Format(time.RFC3339Nano)),
+	)
 
 	s.party.StartKeygen(ctx, send, func(data []byte) {
 		span.AddEvent("keygen finished")

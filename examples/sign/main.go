@@ -45,7 +45,7 @@ func main() {
 		TxID:                txID,
 		Tx:                  dummyTx,
 	}
-	err = mpcClient.SignTransaction(txMsg)
+	err = mpcClient.SignTransaction(ctx, txMsg)
 	if err != nil {
 		logger.Fatal("SignTransaction failed", err)
 	}

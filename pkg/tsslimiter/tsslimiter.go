@@ -2,7 +2,6 @@ package tsslimiter
 
 import (
 	"sync"
-	"time"
 
 	"github.com/fystack/mpcium/pkg/logger"
 )
@@ -62,13 +61,16 @@ type WeightedLimiter struct {
 	mu         sync.Mutex
 	usedPoints int
 	maxPoints  int
+	cond       *sync.Cond
 }
 
 // NewWeightedLimiter creates a limiter with maxPoints = maxSessionsAllowed * 100
 func NewWeightedLimiter(maxSessions int) *WeightedLimiter {
-	return &WeightedLimiter{
+	l := &WeightedLimiter{
 		maxPoints: maxSessions * 100,
 	}
+	l.cond = sync.NewCond(&l.mu)
+	return l
 }
 
 func (l *WeightedLimiter) TryAcquire(t SessionType) bool {
@@ -89,16 +91,14 @@ func (l *WeightedLimiter) TryAcquire(t SessionType) bool {
 func (l *WeightedLimiter) Acquire(t SessionType) {
 	cost := sessionCosts[t]
 
-	for {
-		l.mu.Lock()
-		if l.usedPoints+cost <= l.maxPoints {
-			l.usedPoints += cost
-			l.mu.Unlock()
-			return
-		}
-		l.mu.Unlock()
-		time.Sleep(50 * time.Millisecond) // backoff
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	for l.usedPoints+cost > l.maxPoints {
+		l.cond.Wait()
 	}
+
+	l.usedPoints += cost
 }
 
 func (l *WeightedLimiter) Release(t SessionType) {
@@ -110,7 +110,9 @@ func (l *WeightedLimiter) Release(t SessionType) {
 	if l.usedPoints < 0 {
 		l.usedPoints = 0
 	}
+
 	logger.Info("Release", "sessionType", t, "usedPoints", l.usedPoints, "maxPoints", l.maxPoints)
+	l.cond.Broadcast() // Wake up waiting goroutines
 }
 
 func (l *WeightedLimiter) Stats() (int, int) {

@@ -66,7 +66,7 @@ type Session interface {
 
 	PartyIDs() []*tss.PartyID
 	Send(msg tss.Message)
-	Listen()
+	Listen(ctx context.Context)
 	SaveKey(participantPeerIDs []string, threshold int, version int, data []byte) (err error)
 	WaitForReady(ctx context.Context, sessionID string) error
 	ErrCh() chan error
@@ -76,6 +76,7 @@ type Session interface {
 type session struct {
 	walletID string
 	party    party.Party
+	curve    Curve
 
 	broadcastSub messaging.Subscription
 	directSub    messaging.Subscription
@@ -90,15 +91,17 @@ type session struct {
 	composeKey    KeyComposerFn
 	consulKV      infra.ConsulKV
 
-	mu    sync.Mutex
-	errCh chan error
+	mu          sync.Mutex
+	errCh       chan error
+	msgBuffer   chan *nats.Msg
+	workerCount int
 
 	ctx    context.Context
 	tracer trace.Tracer
 }
 
 func NewSession(
-	purpose Purpose,
+	curve Curve,
 	walletID string,
 	pubSub messaging.PubSub,
 	direct messaging.DirectMessaging,
@@ -109,6 +112,7 @@ func NewSession(
 ) *session {
 	errCh := make(chan error, 1000)
 	return &session{
+		curve:         curve,
 		walletID:      walletID,
 		pubSub:        pubSub,
 		direct:        direct,
@@ -118,6 +122,7 @@ func NewSession(
 		errCh:         errCh,
 		consulKV:      consulKV,
 		tracer:        otel.Tracer("mpcium/session"),
+		msgBuffer:     make(chan *nats.Msg, 100), // Buffer for 100 messages
 	}
 }
 
@@ -161,7 +166,7 @@ func (s *session) WaitForReady(ctx context.Context, sessionID string) error {
 				logger.Info("[READY] peers ready", "have", len(pairs), "need", total, "walletID", s.walletID)
 				return nil
 			}
-			logger.Info("[READY]  Waiting for peers ready", "wallet", s.walletID, "have", len(pairs), "need", total)
+			// logger.Info("[READY]  Waiting for peers ready", "wallet", s.walletID, "have", len(pairs), "need", total)
 		}
 	}
 }
@@ -169,15 +174,23 @@ func (s *session) WaitForReady(ctx context.Context, sessionID string) error {
 // Send is a wrapper around the party's Send method
 // It signs the message and sends it to the remote party
 func (s *session) Send(msg tss.Message) {
-	_, span := s.tracer.Start(s.ctx, "session.Send")
-	defer span.End()
-
 	data, routing, err := msg.WireBytes()
 	if err != nil {
 		s.errCh <- fmt.Errorf("failed to wire bytes: %w", err)
-		span.RecordError(err)
 		return
 	}
+
+	// Create a more descriptive span name from the message type
+	msgType, err := s.party.GetMsgType(data)
+	if err != nil {
+		s.errCh <- fmt.Errorf("failed to get message type: %w", err)
+		return
+	}
+	parts := strings.Split(msgType, ".")
+	spanName := fmt.Sprintf("session.Send: %s: %s", s.curve, parts[len(parts)-1])
+
+	_, span := s.tracer.Start(s.ctx, spanName)
+	defer span.End()
 
 	tssMsg := types.NewTssMessage(s.walletID, data, routing.IsBroadcast, routing.From, routing.To)
 	signature, err := s.identityStore.SignMessage(&tssMsg)
@@ -209,6 +222,17 @@ func (s *session) Send(msg tss.Message) {
 		attribute.StringSlice("to", toNodeIDs),
 		attribute.Bool("is_broadcast", routing.IsBroadcast),
 		attribute.String("round", strconv.Itoa(int(round))),
+		attribute.String("timestamp", time.Now().Format(time.RFC3339Nano)),
+	)
+
+	logger.Info(
+		"Sending",
+		"round",
+		parts[len(parts)-1],
+		"isBroadcast",
+		routing.IsBroadcast,
+		"receivers",
+		toNodeIDs,
 	)
 
 	if routing.IsBroadcast && len(routing.To) == 0 {
@@ -218,11 +242,13 @@ func (s *session) Send(msg tss.Message) {
 			span.RecordError(err)
 			return
 		}
+		span.SetAttributes(attribute.String("topic", s.topicComposer.ComposeBroadcastTopic()))
 	} else {
 		for _, to := range routing.To {
 			nodeID := getRoutingFromPartyID(to)
 			topic := s.topicComposer.ComposeDirectTopic(nodeID)
 			err := s.direct.Send(s.ctx, topic, msgBytes)
+			span.SetAttributes(attribute.String("topic", topic))
 			if err != nil {
 				s.errCh <- fmt.Errorf("failed to send message: %w", err)
 				span.RecordError(err)
@@ -234,7 +260,18 @@ func (s *session) Send(msg tss.Message) {
 
 // Listen is a wrapper around the party's Listen method
 // It subscribes to the broadcast and self direct topics
-func (s *session) Listen() {
+func (s *session) Listen(ctx context.Context) {
+	spanName := fmt.Sprintf("session.Listen:%s", s.curve)
+	listenCtx, span := s.tracer.Start(ctx, spanName)
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("timestamp", time.Now().Format(time.RFC3339Nano)),
+	)
+
+	// Start a single worker to process messages sequentially
+	go s.worker(listenCtx)
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -243,11 +280,20 @@ func (s *session) Listen() {
 
 	broadcast := func() {
 		defer wg.Done()
+
+		_, bSpan := s.tracer.Start(listenCtx, "session.Listen.Subscribe.Broadcast")
+		defer bSpan.End()
+		bSpan.SetAttributes(
+			attribute.String("topic", broadcastTopic),
+			attribute.String("timestamp", time.Now().Format(time.RFC3339Nano)),
+		)
+
 		sub, err := s.pubSub.Subscribe(broadcastTopic, func(natMsg *nats.Msg) {
-			go s.receive(natMsg)
+			s.msgBuffer <- natMsg
 		})
 
 		if err != nil {
+			bSpan.RecordError(err)
 			s.errCh <- fmt.Errorf("failed to subscribe to broadcast topic %s: %w", s.topicComposer.ComposeBroadcastTopic(), err)
 			return
 		}
@@ -257,11 +303,20 @@ func (s *session) Listen() {
 
 	direct := func() {
 		defer wg.Done()
+
+		_, dSpan := s.tracer.Start(listenCtx, "session.Listen.Subscribe.Direct")
+		defer dSpan.End()
+		dSpan.SetAttributes(
+			attribute.String("topic", selfDirectTopic),
+			attribute.String("timestamp", time.Now().Format(time.RFC3339Nano)),
+		)
+
 		sub, err := s.direct.Listen(selfDirectTopic, func(natMsg *nats.Msg) {
-			go s.receive(natMsg)
+			s.msgBuffer <- natMsg
 		})
 
 		if err != nil {
+			dSpan.RecordError(err)
 			s.errCh <- fmt.Errorf("failed to subscribe to direct topic %s: %w", s.topicComposer.ComposeDirectTopic(s.party.PartyID().String()), err)
 			return
 		}
@@ -324,6 +379,11 @@ func (s *session) Close() {
 		s.party.Close()
 	}
 
+	// close msg buffer
+	if s.msgBuffer != nil {
+		close(s.msgBuffer)
+	}
+
 	// Close error channel last
 	select {
 	case <-s.errCh:
@@ -333,10 +393,16 @@ func (s *session) Close() {
 	}
 }
 
+func (s *session) worker(ctx context.Context) {
+	for natMsg := range s.msgBuffer {
+		s.receive(ctx, natMsg)
+	}
+}
+
 // receive is a helper function that receives a message from the party
-func (s *session) receive(natMsg *nats.Msg) {
+func (s *session) receive(ctx context.Context, natMsg *nats.Msg) {
 	carrier := messaging.NewNatsHeaderCarrier(natMsg.Header)
-	parentCtx := otel.GetTextMapPropagator().Extract(context.Background(), carrier)
+	parentCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
 
 	rawMsg := natMsg.Data
 	msg, err := types.UnmarshalTssMessage(rawMsg)
@@ -352,7 +418,7 @@ func (s *session) receive(natMsg *nats.Msg) {
 		return
 	}
 	parts := strings.Split(msgType, ".")
-	spanName := "session.receive: " + parts[len(parts)-1]
+	spanName := fmt.Sprintf("session.receive: %s: %s", s.curve, parts[len(parts)-1])
 
 	_, span := s.tracer.Start(parentCtx, spanName)
 	defer span.End()
@@ -364,7 +430,15 @@ func (s *session) receive(natMsg *nats.Msg) {
 		return
 	}
 
-	// Skip messages from self
+	// logger.Info(
+	// 	"Message",
+	// 	"from",
+	// 	msg.From.String(),
+	// 	"partyID",
+	// 	s.party.PartyID().String(),
+	// 	"Equal",
+	// 	msg.From.String() == s.party.PartyID().String(),
+	// )
 	if msg.From.String() == s.party.PartyID().String() {
 		return
 	}
@@ -374,8 +448,25 @@ func (s *session) receive(natMsg *nats.Msg) {
 		toIDs[i] = id.String()
 	}
 
-	isBroadcast := msg.IsBroadcast && len(msg.To) == 0
+	isBroadcast := msg.IsBroadcast
 	isToSelf := slices.Contains(toIDs, s.party.PartyID().String())
+
+	fromID := msg.From.Moniker // e.g. "7b1090cd-ffe3-46ff-8375-594dd3204169:keygen"
+	fromIDParts := strings.SplitN(fromID, ":", 2)
+	nodeID := fromIDParts[0]
+	logger.Info(
+		"Message",
+		"from",
+		nodeID,
+		"curve",
+		s.curve,
+		"round",
+		parts[len(parts)-1],
+		"isBroadcast",
+		isBroadcast,
+		"isToSelf",
+		isToSelf,
+	) // Skip messages from self
 
 	if isBroadcast || isToSelf {
 		round, _, err := s.party.ClassifyMsg(msg.MsgBytes)
@@ -390,6 +481,7 @@ func (s *session) receive(natMsg *nats.Msg) {
 			attribute.String("round", strconv.Itoa(int(round))),
 			attribute.Bool("is_broadcast", isBroadcast),
 			attribute.Bool("is_to_self", isToSelf),
+			attribute.String("timestamp", time.Now().Format(time.RFC3339Nano)),
 		)
 
 		logger.Debug("Received message", "from", msg.From.Moniker, "round", round, "isBroadcast", msg.IsBroadcast, "isToSelf", isToSelf)
