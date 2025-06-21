@@ -9,15 +9,41 @@ import (
 	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"go.opentelemetry.io/otel"
 )
+
+// NatsHeaderCarrier adapts nats.Header to the otel.TextMapCarrier interface.
+type NatsHeaderCarrier struct {
+	h nats.Header
+}
+
+func NewNatsHeaderCarrier(h nats.Header) NatsHeaderCarrier {
+	return NatsHeaderCarrier{h: h}
+}
+
+func (c NatsHeaderCarrier) Get(key string) string {
+	return c.h.Get(key)
+}
+
+func (c NatsHeaderCarrier) Set(key string, value string) {
+	c.h.Set(key, value)
+}
+
+func (c NatsHeaderCarrier) Keys() []string {
+	keys := make([]string, 0, len(c.h))
+	for k := range c.h {
+		keys = append(keys, k)
+	}
+	return keys
+}
 
 type Subscription interface {
 	Unsubscribe() error
 }
 
 type PubSub interface {
-	Publish(topic string, message []byte) error
-	PublishWithReply(ttopic, reply string, data []byte) error
+	Publish(ctx context.Context, topic string, message []byte) error
+	PublishWithReply(ctx context.Context, topic, reply string, data []byte) error
 	Subscribe(topic string, handler func(msg *nats.Msg)) (Subscription, error)
 }
 
@@ -45,17 +71,26 @@ func NewNATSPubSub(natsConn *nats.Conn) PubSub {
 	return &natsPubSub{natsConn}
 }
 
-func (n *natsPubSub) Publish(topic string, message []byte) error {
+func (n *natsPubSub) Publish(ctx context.Context, topic string, message []byte) error {
 	logger.Debug("[NATS] Publishing message", "topic", topic)
-	return n.natsConn.Publish(topic, message)
+	msg := &nats.Msg{
+		Subject: topic,
+		Data:    message,
+		Header:  nats.Header{},
+	}
+	otel.GetTextMapPropagator().Inject(ctx, NewNatsHeaderCarrier(msg.Header))
+	return n.natsConn.PublishMsg(msg)
 }
 
-func (n *natsPubSub) PublishWithReply(topic, reply string, data []byte) error {
-	return n.natsConn.PublishMsg(&nats.Msg{
+func (n *natsPubSub) PublishWithReply(ctx context.Context, topic, reply string, data []byte) error {
+	msg := &nats.Msg{
 		Subject: topic,
 		Reply:   reply,
 		Data:    data,
-	})
+		Header:  nats.Header{},
+	}
+	otel.GetTextMapPropagator().Inject(ctx, NewNatsHeaderCarrier(msg.Header))
+	return n.natsConn.PublishMsg(msg)
 }
 
 func (n *natsPubSub) Subscribe(topic string, handler func(msg *nats.Msg)) (Subscription, error) {
@@ -72,7 +107,7 @@ func (n *natsPubSub) Subscribe(topic string, handler func(msg *nats.Msg)) (Subsc
 }
 
 type StreamPubsub interface {
-	Publish(topic string, message []byte) error
+	Publish(ctx context.Context, topic string, message []byte) error
 	Subscribe(name string, topic string, handler func(msg jetstream.Msg)) (Subscription, error)
 }
 
@@ -197,8 +232,14 @@ func NewJetStreamPubSub(natsConn *nats.Conn, streamName string, subjects []strin
 	}, nil
 }
 
-func (j *jetStreamPubSub) Publish(topic string, message []byte) error {
-	_, err := j.js.Publish(context.Background(), topic, message)
+func (j *jetStreamPubSub) Publish(ctx context.Context, topic string, message []byte) error {
+	msg := &nats.Msg{
+		Subject: topic,
+		Data:    message,
+		Header:  nats.Header{},
+	}
+	otel.GetTextMapPropagator().Inject(ctx, NewNatsHeaderCarrier(msg.Header))
+	_, err := j.js.PublishMsg(ctx, msg)
 	return err
 }
 

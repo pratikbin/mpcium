@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -49,7 +50,7 @@ func main() {
 
 	for i := 0; i < *numWallets; i++ {
 		walletID := uuid.New().String()
-		if err := mpcClient.CreateWallet(walletID); err != nil {
+		if err := mpcClient.CreateWallet(context.Background(), walletID); err != nil {
 			logger.Error("CreateWallet failed", err)
 			continue
 		}

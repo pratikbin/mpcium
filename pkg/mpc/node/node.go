@@ -18,6 +18,8 @@ import (
 	"github.com/fystack/mpcium/pkg/mpc/session"
 	"github.com/fystack/mpcium/pkg/types"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // DefaultVersion is the default version for keygen and resharing
@@ -35,6 +37,7 @@ type Node struct {
 
 	peerRegistry *registry
 	consulKV     infra.ConsulKV
+	tracer       trace.Tracer
 }
 
 func NewNode(
@@ -60,6 +63,7 @@ func NewNode(
 		identityStore: identityStore,
 		peerRegistry:  peerRegistry,
 		consulKV:      consulKV,
+		tracer:        otel.Tracer("mpcium/node"),
 	}
 }
 

@@ -70,6 +70,14 @@ func (s *ECDSAParty) ClassifyMsg(msgBytes []byte) (uint8, bool, error) {
 	return round, isBroadcast, nil
 }
 
+func (s *ECDSAParty) GetMsgType(msgBytes []byte) (string, error) {
+	msg := &any.Any{}
+	if err := proto.Unmarshal(msgBytes, msg); err != nil {
+		return "", err
+	}
+	return msg.TypeUrl, nil
+}
+
 func (s *ECDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
 	end := make(chan *keygen.LocalPartySaveData, 1)
 	// Time the initialization of TSS parameters and party

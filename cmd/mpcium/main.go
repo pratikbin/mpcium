@@ -19,6 +19,7 @@ import (
 	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/fystack/mpcium/pkg/messaging"
 	"github.com/fystack/mpcium/pkg/mpc/node"
+	"github.com/fystack/mpcium/pkg/tracing"
 	"github.com/hashicorp/consul/api"
 	"github.com/nats-io/nats.go"
 	"github.com/spf13/viper"
@@ -108,6 +109,16 @@ func runNode(ctx context.Context, c *cli.Command) error {
 	keyinfoStore := keyinfo.NewStore(consulClient.KV())
 	peers := LoadPeersFromConsul(consulClient)
 	nodeID := GetIDFromName(nodeName, peers)
+
+	tp, err := tracing.InitTracerProvider("mpcium", nodeID)
+	if err != nil {
+		logger.Fatal("Failed to initialize tracer provider", err)
+	}
+	defer func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			logger.Error("Error shutting down tracer provider", err)
+		}
+	}()
 
 	identityStore, err := identity.NewFileStore("identity", nodeName, decryptPrivateKey)
 	if err != nil {

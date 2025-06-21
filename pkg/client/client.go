@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
@@ -38,13 +39,13 @@ const (
 )
 
 type MPCClient interface {
-	CreateWallet(walletID string) error
+	CreateWallet(ctx context.Context, walletID string) error
 	OnWalletCreationResult(callback func(event.KeygenSuccessEvent)) error
 
-	SignTransaction(msg *types.SignTxMessage) error
+	SignTransaction(ctx context.Context, msg *types.SignTxMessage) error
 	OnSignResult(callback func(event.SigningResultEvent)) error
 
-	Resharing(walletID string, newThreshold int, keyType types.KeyType) error
+	Resharing(ctx context.Context, walletID string, newThreshold int, keyType types.KeyType) error
 	OnResharingResult(callback func(event.ResharingSuccessEvent)) error
 }
 
@@ -104,7 +105,7 @@ func initMessageQueueManager(natsConn *nats.Conn) *messaging.NATsMessageQueueMan
 }
 
 // CreateWallet generates a GenerateKeyMessage, signs it, and publishes it.
-func (c *mpcClient) CreateWallet(walletID string) error {
+func (c *mpcClient) CreateWallet(ctx context.Context, walletID string) error {
 	msg := &types.GenerateKeyMessage{WalletID: walletID}
 
 	raw, err := msg.Raw()
@@ -118,7 +119,7 @@ func (c *mpcClient) CreateWallet(walletID string) error {
 		return fmt.Errorf("CreateWallet: marshal error: %w", err)
 	}
 
-	if err := c.pubsub.Publish(eventconsumer.MPCGenerateEvent, bytes); err != nil {
+	if err := c.pubsub.Publish(ctx, eventconsumer.MPCGenerateEvent, bytes); err != nil {
 		return fmt.Errorf("CreateWallet: publish error: %w", err)
 	}
 	return nil
@@ -128,7 +129,7 @@ func (c *mpcClient) OnWalletCreationResult(callback func(event.KeygenSuccessEven
 	return c.handleQueueEvent(c.genKeySuccessQueue, event.KeygenSuccessEventTopic, callback)
 }
 
-func (c *mpcClient) SignTransaction(msg *types.SignTxMessage) error {
+func (c *mpcClient) SignTransaction(ctx context.Context, msg *types.SignTxMessage) error {
 	raw, err := msg.Raw()
 	if err != nil {
 		return fmt.Errorf("SignTransaction: raw payload error: %w", err)
@@ -140,7 +141,7 @@ func (c *mpcClient) SignTransaction(msg *types.SignTxMessage) error {
 		return fmt.Errorf("SignTransaction: marshal error: %w", err)
 	}
 
-	if err := c.signingStream.Publish(event.SigningRequestEventTopic, bytes); err != nil {
+	if err := c.signingStream.Publish(ctx, event.SigningRequestEventTopic, bytes); err != nil {
 		return fmt.Errorf("SignTransaction: publish error: %w", err)
 	}
 	return nil
@@ -150,7 +151,7 @@ func (c *mpcClient) OnSignResult(callback func(event.SigningResultEvent)) error 
 	return c.handleQueueEvent(c.signResultQueue, event.SigningResultCompleteTopic, callback)
 }
 
-func (c *mpcClient) Resharing(walletID string, newThreshold int, keyType types.KeyType) error {
+func (c *mpcClient) Resharing(ctx context.Context, walletID string, newThreshold int, keyType types.KeyType) error {
 	msg := &types.ResharingMessage{
 		WalletID:     walletID,
 		NewThreshold: newThreshold,
@@ -168,7 +169,7 @@ func (c *mpcClient) Resharing(walletID string, newThreshold int, keyType types.K
 		return fmt.Errorf("Resharing: marshal error: %w", err)
 	}
 
-	if err := c.pubsub.Publish(eventconsumer.MPCResharingEvent, bytes); err != nil {
+	if err := c.pubsub.Publish(ctx, eventconsumer.MPCResharingEvent, bytes); err != nil {
 		return fmt.Errorf("Resharing: publish error: %w", err)
 	}
 	return nil

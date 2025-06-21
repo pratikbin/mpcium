@@ -1,57 +1,48 @@
 package messaging
 
 import (
-	"time"
+	"context"
 
-	"github.com/avast/retry-go"
 	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel"
 )
 
 type DirectMessaging interface {
-	Listen(target string, handler func(data []byte)) (Subscription, error)
-	Send(target string, data []byte) error
+	Send(ctx context.Context, topic string, data []byte) error
+	Listen(topic string, onReceive func(msg *nats.Msg)) (Subscription, error)
+	Close()
 }
 
 type natsDirectMessaging struct {
-	natsConn *nats.Conn
+	conn *nats.Conn
 }
 
-func NewNatsDirectMessaging(natsConn *nats.Conn) DirectMessaging {
-	return &natsDirectMessaging{
-		natsConn: natsConn,
+func NewNatsDirectMessaging(conn *nats.Conn) DirectMessaging {
+	return &natsDirectMessaging{conn}
+}
+
+func (d *natsDirectMessaging) Send(ctx context.Context, topic string, data []byte) error {
+	logger.Debug("[NATS] Sending direct message", "topic", topic)
+	msg := &nats.Msg{
+		Subject: topic,
+		Data:    data,
+		Header:  nats.Header{},
 	}
+	otel.GetTextMapPropagator().Inject(ctx, NewNatsHeaderCarrier(msg.Header))
+	return d.conn.PublishMsg(msg)
 }
 
-func (d *natsDirectMessaging) Send(id string, message []byte) error {
-	var retryCount = 0
-	err := retry.Do(
-		func() error {
-			_, err := d.natsConn.Request(id, message, 3*time.Second)
-			if err != nil {
-				return err
-			}
-			return nil
-		},
-		retry.Attempts(3),
-		retry.Delay(50*time.Millisecond),
-		retry.DelayType(retry.FixedDelay),
-		retry.OnRetry(func(n uint, err error) {
-			logger.Error("Failed to send direct message message", err, "retryCount", retryCount, "target", id)
-		}),
-	)
-
-	return err
-}
-
-func (d *natsDirectMessaging) Listen(id string, handler func(data []byte)) (Subscription, error) {
-	sub, err := d.natsConn.Subscribe(id, func(m *nats.Msg) {
-		handler(m.Data)
-		m.Respond([]byte("OK"))
+func (d *natsDirectMessaging) Listen(topic string, onReceive func(msg *nats.Msg)) (Subscription, error) {
+	sub, err := d.conn.Subscribe(topic, func(msg *nats.Msg) {
+		onReceive(msg)
 	})
 	if err != nil {
 		return nil, err
 	}
-
 	return &natsSubscription{subscription: sub}, nil
+}
+
+func (d *natsDirectMessaging) Close() {
+	d.conn.Close()
 }

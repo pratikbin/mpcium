@@ -30,6 +30,7 @@ type Party interface {
 	GetSaveData() []byte
 	SetSaveData(saveData []byte)
 	ClassifyMsg(msgBytes []byte) (uint8, bool, error)
+	GetMsgType(msgBytes []byte) (string, error)
 	InCh() chan types.TssMessage
 	OutCh() chan tss.Message
 	ErrCh() chan error

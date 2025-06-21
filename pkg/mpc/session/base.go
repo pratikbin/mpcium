@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +22,9 @@ import (
 	"github.com/fystack/mpcium/pkg/types"
 	"github.com/hashicorp/consul/api"
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Curve string
@@ -87,6 +92,9 @@ type session struct {
 
 	mu    sync.Mutex
 	errCh chan error
+
+	ctx    context.Context
+	tracer trace.Tracer
 }
 
 func NewSession(
@@ -109,6 +117,7 @@ func NewSession(
 		keyinfoStore:  keyinfoStore,
 		errCh:         errCh,
 		consulKV:      consulKV,
+		tracer:        otel.Tracer("mpcium/session"),
 	}
 }
 
@@ -160,9 +169,13 @@ func (s *session) WaitForReady(ctx context.Context, sessionID string) error {
 // Send is a wrapper around the party's Send method
 // It signs the message and sends it to the remote party
 func (s *session) Send(msg tss.Message) {
+	_, span := s.tracer.Start(s.ctx, "session.Send")
+	defer span.End()
+
 	data, routing, err := msg.WireBytes()
 	if err != nil {
 		s.errCh <- fmt.Errorf("failed to wire bytes: %w", err)
+		span.RecordError(err)
 		return
 	}
 
@@ -170,17 +183,20 @@ func (s *session) Send(msg tss.Message) {
 	signature, err := s.identityStore.SignMessage(&tssMsg)
 	if err != nil {
 		s.errCh <- fmt.Errorf("failed to sign message: %w", err)
+		span.RecordError(err)
 		return
 	}
 	tssMsg.Signature = signature
 	msgBytes, err := types.MarshalTssMessage(&tssMsg)
 	if err != nil {
 		s.errCh <- fmt.Errorf("failed to marshal message: %w", err)
+		span.RecordError(err)
 		return
 	}
 	round, _, err := s.party.ClassifyMsg(data)
 	if err != nil {
 		s.errCh <- fmt.Errorf("failed to classify message: %w", err)
+		span.RecordError(err)
 		return
 	}
 	toNodeIDs := make([]string, len(routing.To))
@@ -188,20 +204,28 @@ func (s *session) Send(msg tss.Message) {
 		toNodeIDs[i] = getRoutingFromPartyID(to)
 	}
 	logger.Debug("Sending message", "from", routing.From.Moniker, "to", toNodeIDs, "isBroadcast", routing.IsBroadcast, "round", round)
+	span.SetAttributes(
+		attribute.String("from", routing.From.Moniker),
+		attribute.StringSlice("to", toNodeIDs),
+		attribute.Bool("is_broadcast", routing.IsBroadcast),
+		attribute.String("round", strconv.Itoa(int(round))),
+	)
 
 	if routing.IsBroadcast && len(routing.To) == 0 {
-		err := s.pubSub.Publish(s.topicComposer.ComposeBroadcastTopic(), msgBytes)
+		err := s.pubSub.Publish(s.ctx, s.topicComposer.ComposeBroadcastTopic(), msgBytes)
 		if err != nil {
 			s.errCh <- fmt.Errorf("failed to publish message: %w", err)
+			span.RecordError(err)
 			return
 		}
 	} else {
 		for _, to := range routing.To {
 			nodeID := getRoutingFromPartyID(to)
 			topic := s.topicComposer.ComposeDirectTopic(nodeID)
-			err := s.direct.Send(topic, msgBytes)
+			err := s.direct.Send(s.ctx, topic, msgBytes)
 			if err != nil {
 				s.errCh <- fmt.Errorf("failed to send message: %w", err)
+				span.RecordError(err)
 				return
 			}
 		}
@@ -220,8 +244,7 @@ func (s *session) Listen() {
 	broadcast := func() {
 		defer wg.Done()
 		sub, err := s.pubSub.Subscribe(broadcastTopic, func(natMsg *nats.Msg) {
-			msg := natMsg.Data
-			go s.receive(msg)
+			go s.receive(natMsg)
 		})
 
 		if err != nil {
@@ -234,8 +257,8 @@ func (s *session) Listen() {
 
 	direct := func() {
 		defer wg.Done()
-		sub, err := s.direct.Listen(selfDirectTopic, func(msg []byte) {
-			go s.receive(msg)
+		sub, err := s.direct.Listen(selfDirectTopic, func(natMsg *nats.Msg) {
+			go s.receive(natMsg)
 		})
 
 		if err != nil {
@@ -311,16 +334,33 @@ func (s *session) Close() {
 }
 
 // receive is a helper function that receives a message from the party
-func (s *session) receive(rawMsg []byte) {
+func (s *session) receive(natMsg *nats.Msg) {
+	carrier := messaging.NewNatsHeaderCarrier(natMsg.Header)
+	parentCtx := otel.GetTextMapPropagator().Extract(context.Background(), carrier)
+
+	rawMsg := natMsg.Data
 	msg, err := types.UnmarshalTssMessage(rawMsg)
 	if err != nil {
 		s.errCh <- fmt.Errorf("failed to unmarshal message: %w", err)
 		return
 	}
 
+	// Create a more descriptive span name from the message type
+	msgType, err := s.party.GetMsgType(msg.MsgBytes)
+	if err != nil {
+		s.errCh <- fmt.Errorf("failed to get message type: %w", err)
+		return
+	}
+	parts := strings.Split(msgType, ".")
+	spanName := "session.receive: " + parts[len(parts)-1]
+
+	_, span := s.tracer.Start(parentCtx, spanName)
+	defer span.End()
+
 	err = s.identityStore.VerifyMessage(msg)
 	if err != nil {
 		s.errCh <- fmt.Errorf("failed to verify message: %w", err)
+		span.RecordError(err)
 		return
 	}
 
@@ -341,8 +381,17 @@ func (s *session) receive(rawMsg []byte) {
 		round, _, err := s.party.ClassifyMsg(msg.MsgBytes)
 		if err != nil {
 			s.errCh <- fmt.Errorf("failed to classify message: %w", err)
+			span.RecordError(err)
 			return
 		}
+
+		span.SetAttributes(
+			attribute.String("from", msg.From.Moniker),
+			attribute.String("round", strconv.Itoa(int(round))),
+			attribute.Bool("is_broadcast", isBroadcast),
+			attribute.Bool("is_to_self", isToSelf),
+		)
+
 		logger.Debug("Received message", "from", msg.From.Moniker, "round", round, "isBroadcast", msg.IsBroadcast, "isToSelf", isToSelf)
 		s.mu.Lock()
 		defer s.mu.Unlock()

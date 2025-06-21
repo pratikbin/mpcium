@@ -21,6 +21,9 @@ import (
 	"github.com/fystack/mpcium/pkg/types"
 	"github.com/nats-io/nats.go"
 	"github.com/spf13/viper"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -67,6 +70,7 @@ type eventConsumer struct {
 	sessionTimeout  time.Duration // How long before a session is considered stale
 	cleanupStopChan chan struct{} // Signal to stop cleanup goroutine
 	limiterQueue    tsslimiter.Queue
+	tracer          trace.Tracer
 }
 
 func NewEventConsumer(
@@ -93,6 +97,7 @@ func NewEventConsumer(
 		mpcThreshold:         viper.GetInt("mpc_threshold"),
 		identityStore:        identityStore,
 		limiterQueue:         limiterQueue,
+		tracer:               otel.Tracer("mpcium/eventconsumer"),
 	}
 
 	// Start background cleanup goroutine
@@ -122,12 +127,18 @@ func (ec *eventConsumer) Run() {
 func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 	// Create session limiter channel with capacity 5
 	sub, err := ec.pubsub.Subscribe(MPCGenerateEvent, func(natMsg *nats.Msg) {
+		carrier := messaging.NewNatsHeaderCarrier(natMsg.Header)
+		parentCtx := otel.GetTextMapPropagator().Extract(context.Background(), carrier)
+
+		ctx, span := ec.tracer.Start(parentCtx, "consumeKeyGenerationEvent")
+		defer span.End()
+
 		logger.Info("Received key generation event, enqueuing combined job", "subject", natMsg.Subject)
 
 		job := tsslimiter.SessionJob{
 			Type: tsslimiter.SessionKeygenCombined,
 			Run: func() error {
-				return ec.handleKeyGenerationEvent(context.Background(), natMsg.Data)
+				return ec.handleKeyGenerationEvent(ctx, natMsg.Data)
 			},
 			OnError: func(err error) {
 				logger.Error("Failed to handle key generation event", err, "message", natMsg.Data)
@@ -149,22 +160,30 @@ func (ec *eventConsumer) handleKeyGenerationEvent(parentCtx context.Context, raw
 	handlerCtx, handlerCancel := context.WithTimeout(parentCtx, HandlerTimeout)
 	defer handlerCancel()
 
+	ctx, span := ec.tracer.Start(handlerCtx, "handleKeyGenerationEvent")
+
+	defer span.End()
+
 	// 1) decode and verify
 	var msg types.GenerateKeyMessage
 	if err := json.Unmarshal(raw, &msg); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("unmarshal message: %w", err)
 	}
 	if err := ec.identityStore.VerifyInitiatorMessage(&msg); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("verify initiator: %w", err)
 	}
 
 	walletID := msg.WalletID
+	span.SetAttributes(attribute.String("wallet_id", walletID))
 	logger.Info("Processing combined key generation job", "walletID", walletID)
 	successEvent := &event.KeygenSuccessEvent{WalletID: walletID}
 
 	// 2) prepare both sessions
 	s0, err := ec.node.CreateKeygenSession(types.KeyTypeSecp256k1, walletID, ec.mpcThreshold, ec.genKeySuccessQueue)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("create ECDSA session: %w", err)
 	}
 	defer s0.Close()
@@ -172,6 +191,7 @@ func (ec *eventConsumer) handleKeyGenerationEvent(parentCtx context.Context, raw
 	s1, err := ec.node.CreateKeygenSession(types.KeyTypeEd25519, walletID, ec.mpcThreshold, ec.genKeySuccessQueue)
 	if err != nil {
 		s0.Close()
+		span.RecordError(err)
 		return fmt.Errorf("create EDDSA session: %w", err)
 	}
 	defer s1.Close()
@@ -184,7 +204,7 @@ func (ec *eventConsumer) handleKeyGenerationEvent(parentCtx context.Context, raw
 	wg.Add(2)
 
 	runKeygen := func(s session.Session, keyType types.KeyType) {
-		sessionCtx, sessionCancel := context.WithTimeout(handlerCtx, SessionTimeout)
+		sessionCtx, sessionCancel := context.WithTimeout(ctx, SessionTimeout)
 		defer sessionCancel()
 
 		s.StartKeygen(sessionCtx, s.Send, func(data []byte) {
@@ -219,6 +239,7 @@ func (ec *eventConsumer) handleKeyGenerationEvent(parentCtx context.Context, raw
 	select {
 	case <-handlerCtx.Done():
 		logger.Warn("Keygen timed out while waiting for MPC sessions to complete", "walletID", walletID, "error", handlerCtx.Err())
+		span.RecordError(handlerCtx.Err())
 		return handlerCtx.Err()
 	case <-doneCh:
 		logger.Info("Both key generation sessions completed.", "walletID", walletID)
@@ -227,6 +248,7 @@ func (ec *eventConsumer) handleKeyGenerationEvent(parentCtx context.Context, raw
 	// 4) marshal & publish success
 	successBytes, err := json.Marshal(successEvent)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("marshal success event: %w", err)
 	}
 	if err := ec.genKeySuccessQueue.Enqueue(
@@ -236,6 +258,7 @@ func (ec *eventConsumer) handleKeyGenerationEvent(parentCtx context.Context, raw
 			IdempotententKey: fmt.Sprintf(event.TypeGenerateWalletSuccess, walletID),
 		},
 	); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("enqueue success event: %w", err)
 	}
 
@@ -245,17 +268,30 @@ func (ec *eventConsumer) handleKeyGenerationEvent(parentCtx context.Context, raw
 
 func (ec *eventConsumer) consumeTxSigningEvent() error {
 	sub, err := ec.pubsub.Subscribe(MPCSignEvent, func(natMsg *nats.Msg) {
+		carrier := messaging.NewNatsHeaderCarrier(natMsg.Header)
+		parentCtx := otel.GetTextMapPropagator().Extract(context.Background(), carrier)
+
+		ctx, span := ec.tracer.Start(parentCtx, "consumeTxSigningEvent")
+		defer span.End()
+
 		raw := natMsg.Data
 		var msg types.SignTxMessage
 		err := json.Unmarshal(raw, &msg)
 		if err != nil {
 			logger.Error("Failed to unmarshal signing message", err)
+			span.RecordError(err)
 			return
 		}
+
+		span.SetAttributes(
+			attribute.String("wallet_id", msg.WalletID),
+			attribute.String("tx_id", msg.TxID),
+		)
 
 		err = ec.identityStore.VerifyInitiatorMessage(&msg)
 		if err != nil {
 			logger.Error("Failed to verify initiator message", err)
+			span.RecordError(err)
 			return
 		}
 
@@ -273,6 +309,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 		keyInfoVersion, err := ec.node.GetKeyInfoVersion(msg.KeyType, msg.WalletID)
 		if err != nil {
 			logger.Error("Failed to get party version", err)
+			span.RecordError(err)
 			ec.removeSession(msg.WalletID, msg.TxID)
 			return
 		}
@@ -288,6 +325,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		if err != nil {
 			ec.handleSigningSessionError(
+				ctx,
 				msg.WalletID,
 				msg.TxID,
 				msg.NetworkInternalCode,
@@ -303,8 +341,8 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		txBigInt := new(big.Int).SetBytes(msg.Tx)
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			signingSession.StartSigning(ctx, txBigInt, signingSession.Send, func(data []byte) {
+			sessionCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			signingSession.StartSigning(sessionCtx, txBigInt, signingSession.Send, func(data []byte) {
 				cancel()
 				signatureData, err := signingSession.VerifySignature(msg.Tx, data)
 				if err != nil {
@@ -349,6 +387,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 			for err := range signingSession.ErrCh() {
 				logger.Error("Error from session", err)
 				ec.handleSigningSessionError(
+					ctx,
 					msg.WalletID,
 					msg.TxID,
 					msg.NetworkInternalCode,
@@ -371,10 +410,17 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 func (ec *eventConsumer) consumeResharingEvent() error {
 	sub, err := ec.pubsub.Subscribe(MPCResharingEvent, func(natMsg *nats.Msg) {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		carrier := messaging.NewNatsHeaderCarrier(natMsg.Header)
+		parentCtx := otel.GetTextMapPropagator().Extract(context.Background(), carrier)
+
+		ctx, span := ec.tracer.Start(parentCtx, "consumeResharingEvent")
+		defer span.End()
+
+		reshareCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
 
-		if err := ec.handleReshareEvent(ctx, natMsg.Data); err != nil {
+		if err := ec.handleReshareEvent(reshareCtx, natMsg.Data); err != nil {
+			span.RecordError(err)
 			logger.Error("Failed to handle resharing event", err)
 		}
 	})
@@ -387,16 +433,22 @@ func (ec *eventConsumer) consumeResharingEvent() error {
 }
 
 func (ec *eventConsumer) handleReshareEvent(ctx context.Context, raw []byte) error {
+	ctx, span := ec.tracer.Start(ctx, "handleReshareEvent")
+	defer span.End()
+
 	var msg types.ResharingMessage
 	if err := json.Unmarshal(raw, &msg); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("unmarshal message: %w", err)
 	}
 	logger.Info("Received resharing event",
 		"walletID", msg.WalletID,
 		"oldThreshold", ec.mpcThreshold,
 		"newThreshold", msg.NewThreshold)
+	span.SetAttributes(attribute.String("wallet_id", msg.WalletID))
 
 	if err := ec.identityStore.VerifyInitiatorMessage(&msg); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("verify initiator: %w", err)
 	}
 
@@ -404,11 +456,13 @@ func (ec *eventConsumer) handleReshareEvent(ctx context.Context, raw []byte) err
 
 	oldSession, err := ec.node.CreateResharingSession(true, msg.KeyType, msg.WalletID, ec.mpcThreshold, keyInfoVersion, ec.resharingResultQueue)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("create old session: %w", err)
 	}
 
 	newSession, err := ec.node.CreateResharingSession(false, msg.KeyType, msg.WalletID, msg.NewThreshold, keyInfoVersion, ec.resharingResultQueue)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("create new session: %w", err)
 	}
 
@@ -476,6 +530,7 @@ func (ec *eventConsumer) handleReshareEvent(ctx context.Context, raw []byte) err
 
 	eventBytes, err := json.Marshal(successEvent)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("marshal success event: %w", err)
 	}
 
@@ -487,6 +542,7 @@ func (ec *eventConsumer) handleReshareEvent(ctx context.Context, raw []byte) err
 		},
 	)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("enqueue resharing success: %w", err)
 	}
 
@@ -494,7 +550,13 @@ func (ec *eventConsumer) handleReshareEvent(ctx context.Context, raw []byte) err
 	return nil
 }
 
-func (ec *eventConsumer) handleSigningSessionError(walletID, txID, NetworkInternalCode string, err error, errMsg string, natMsg *nats.Msg) {
+func (ec *eventConsumer) handleSigningSessionError(ctx context.Context, walletID, txID, NetworkInternalCode string, err error, errMsg string, natMsg *nats.Msg) {
+	span := trace.SpanFromContext(ctx)
+	span.RecordError(err)
+	span.SetAttributes(
+		attribute.String("error.message", errMsg),
+	)
+
 	logger.Error("signing session error", err, "walletID", walletID, "txID", txID, "error", errMsg)
 	signingResult := event.SigningResultEvent{
 		ResultType:          event.SigningResultTypeError,

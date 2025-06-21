@@ -10,6 +10,7 @@ import (
 	"github.com/fystack/mpcium/pkg/messaging"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"go.opentelemetry.io/otel"
 )
 
 const (
@@ -83,6 +84,10 @@ func (sc *signingConsumer) Run(ctx context.Context) error {
 // When signing completes, the session publishes the result to a queue and calls the onSuccess callback, which sends a reply to the inbox that the SigningConsumer is monitoring.
 // The reply signals completion, allowing the SigningConsumer to acknowledge the original message.
 func (sc *signingConsumer) handleSigningEvent(msg jetstream.Msg) {
+	// Create a new context and extract trace information from the message headers
+	carrier := messaging.NewNatsHeaderCarrier(msg.Headers())
+	ctx := otel.GetTextMapPropagator().Extract(context.Background(), carrier)
+
 	// Create a reply inbox to receive the signing event response.
 	replyInbox := nats.NewInbox()
 
@@ -100,7 +105,7 @@ func (sc *signingConsumer) handleSigningEvent(msg jetstream.Msg) {
 	}()
 
 	// Publish the signing event with the reply inbox.
-	if err := sc.pubsub.PublishWithReply(event.MPCSigningEventTopic, replyInbox, msg.Data()); err != nil {
+	if err := sc.pubsub.PublishWithReply(ctx, event.MPCSigningEventTopic, replyInbox, msg.Data()); err != nil {
 		logger.Error("SigningConsumer: Failed to publish signing event with reply", err)
 		_ = msg.Nak()
 		return

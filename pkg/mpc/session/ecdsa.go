@@ -18,6 +18,7 @@ import (
 	"github.com/fystack/mpcium/pkg/kvstore"
 	"github.com/fystack/mpcium/pkg/messaging"
 	"github.com/fystack/mpcium/pkg/mpc/party"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type ECDSASession struct {
@@ -56,15 +57,48 @@ func NewECDSASession(
 }
 
 func (s *ECDSASession) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
-	s.party.StartKeygen(ctx, send, finish)
+	s.mu.Lock()
+	s.ctx = ctx
+	s.mu.Unlock()
+
+	ctx, span := s.tracer.Start(ctx, "ecdsa.StartKeygen")
+	defer span.End()
+	span.SetAttributes(attribute.String("wallet_id", s.walletID))
+
+	s.party.StartKeygen(ctx, send, func(data []byte) {
+		span.AddEvent("keygen finished")
+		finish(data)
+	})
 }
 
 func (s *ECDSASession) StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte)) {
-	s.party.StartSigning(ctx, msg, send, finish)
+	s.mu.Lock()
+	s.ctx = ctx
+	s.mu.Unlock()
+
+	ctx, span := s.tracer.Start(ctx, "ecdsa.StartSigning")
+	defer span.End()
+	span.SetAttributes(attribute.String("wallet_id", s.walletID))
+
+	s.party.StartSigning(ctx, msg, send, func(data []byte) {
+		span.AddEvent("signing finished")
+		finish(data)
+	})
 }
 
 func (s *ECDSASession) StartResharing(ctx context.Context, oldPartyIDs []*tss.PartyID, newPartyIDs []*tss.PartyID, oldThreshold int, newThreshold int, send func(tss.Message), finish func([]byte)) {
-	s.party.StartResharing(ctx, oldPartyIDs, newPartyIDs, oldThreshold, newThreshold, send, finish)
+	s.mu.Lock()
+	s.ctx = ctx
+	s.mu.Unlock()
+
+	ctx, span := s.tracer.Start(ctx, "ecdsa.StartResharing")
+	defer span.End()
+	span.SetAttributes(attribute.String("wallet_id", s.walletID))
+
+	s.party.StartResharing(ctx, oldPartyIDs, newPartyIDs, oldThreshold, newThreshold, send, func(data []byte) {
+		span.AddEvent("resharing finished")
+		finish(data)
+	})
 }
 
 func (s *ECDSASession) GetPublicKey(data []byte) ([]byte, error) {
