@@ -126,12 +126,13 @@ func (ec *eventConsumer) consumeKeyGenerationEvent() error {
 
 		job := tsslimiter.SessionJob{
 			Type: tsslimiter.SessionKeygenCombined,
-			Run: func() {
-				// Ack the message immediately to prevent redelivery from JetStream. This is critical.
-				if err := ec.handleKeyGenerationEvent(context.Background(), natMsg.Data); err != nil {
-					logger.Error("Failed to handle key generation event", err)
-				}
+			Run: func() error {
+				return ec.handleKeyGenerationEvent(context.Background(), natMsg.Data)
 			},
+			OnError: func(err error) {
+				logger.Error("Failed to handle key generation event", err, "message", natMsg.Data)
+			},
+			Name: string(natMsg.Data),
 		}
 		ec.limiterQueue.Enqueue(job)
 	})
@@ -180,29 +181,26 @@ func (ec *eventConsumer) handleKeyGenerationEvent(parentCtx context.Context, raw
 
 	// 3) Start both key generation routines and wait for them to complete
 	var wg sync.WaitGroup
-	var eventMutex sync.Mutex
 	wg.Add(2)
 
 	runKeygen := func(s session.Session, keyType types.KeyType) {
-		defer wg.Done()
 		sessionCtx, sessionCancel := context.WithTimeout(handlerCtx, SessionTimeout)
 		defer sessionCancel()
 
 		s.StartKeygen(sessionCtx, s.Send, func(data []byte) {
+			defer wg.Done()
 			logger.Info("[callback] StartKeygen fired", "walletID", walletID, "keyType", keyType)
 			if err := s.SaveKey(ec.node.GetReadyPeersIncludeSelf(), ec.mpcThreshold, DefaultVersion, data); err != nil {
 				logger.Error("Failed to save key", err, "walletID", walletID, "keyType", keyType)
 			}
 
 			if pubKey, err := s.GetPublicKey(data); err == nil {
-				eventMutex.Lock()
 				switch keyType {
 				case types.KeyTypeSecp256k1:
 					successEvent.ECDSAPubKey = pubKey
 				case types.KeyTypeEd25519:
 					successEvent.EDDSAPubKey = pubKey
 				}
-				eventMutex.Unlock()
 			} else {
 				logger.Error("Failed to get public key", err, "walletID", walletID, "keyType", keyType)
 			}
