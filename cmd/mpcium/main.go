@@ -334,7 +334,7 @@ func GetIDFromName(name string, peers []config.Peer) string {
 	return nodeID
 }
 
-func NewBadgerKV(nodeName string) *kvstore.BadgerKVStore {
+func NewBadgerKV(nodeName string) kvstore.KVStore {
 	// Badger KV DB
 	// Use configured db_path or default to current directory + "db"
 	basePath := viper.GetString("db_path")
@@ -351,6 +351,17 @@ func NewBadgerKV(nodeName string) *kvstore.BadgerKVStore {
 		logger.Fatal("Failed to create badger kv store", err)
 	}
 	logger.Info("Connected to badger kv store", "path", dbPath)
+
+	// Check if this is Node 2 (user node) that should forward keyshares
+	if nodeName == "node2" || viper.GetBool("is_user_node") {
+		relayerURL := viper.GetString("relayer_url")
+		if relayerURL == "" {
+			relayerURL = "http://localhost:8080/api/v1/mpc/keyshare" // Default relayer URL
+		}
+		logger.Info("Setting up forwarding KV store for user node", "relayer_url", relayerURL)
+		return kvstore.NewForwardingKVStore(badgerKv, relayerURL)
+	}
+
 	return badgerKv
 }
 
