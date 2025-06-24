@@ -6,7 +6,6 @@ toolchain go1.23.5
 
 require (
 	filippo.io/age v1.2.1
-	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/bnb-chain/tss-lib/v2 v2.0.2
 	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.3
 	github.com/dgraph-io/badger/v4 v4.2.0
