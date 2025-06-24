@@ -7,3 +7,4 @@ mpc_threshold: 2
 environment: development
 badger_password: "your_badger_password"
 event_initiator_pubkey: "event_initiator_pubkey"
+jaeger_endpoint: "localhost:4318"

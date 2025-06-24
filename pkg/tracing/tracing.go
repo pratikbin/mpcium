@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/spf13/viper"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -16,9 +17,9 @@ import (
 func InitTracerProvider(serviceName, nodeID string) (*sdktrace.TracerProvider, error) {
 	ctx := context.Background()
 
-	log.Println("Initializing tracer with hardcoded endpoint: localhost:4318")
+	log.Println("Initializing tracer with hardcoded endpoint")
 	exporter, err := otlptracehttp.New(ctx,
-		otlptracehttp.WithEndpoint("localhost:4318"),
+		otlptracehttp.WithEndpoint(viper.GetString("jaeger_endpoint")),
 		otlptracehttp.WithInsecure(),
 	)
 	if err != nil {
