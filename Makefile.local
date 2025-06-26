@@ -1,0 +1,11 @@
+.PHONY: clean new
+
+clean:
+	@# only kill the window if it exists
+	@if tmux list-windows -F "#{window_name}" \
+	     | grep -qw "^mpcium$$"; then \
+	    tmux kill-window -t mpcium; \
+	fi
+
+new: clean
+	@tmuxifier load-window mpcium
