@@ -61,7 +61,7 @@ type Session interface {
 
 	PartyIDs() []*tss.PartyID
 	Send(msg tss.Message)
-	Listen()
+	Listen(ctx context.Context)
 	SaveKey(participantPeerIDs []string, threshold int, version int, data []byte) (err error)
 	WaitForReady(ctx context.Context, sessionID string) error
 	ErrCh() chan error
@@ -80,6 +80,9 @@ type session struct {
 	identityStore identity.Store
 	kvstore       kvstore.KVStore
 	keyinfoStore  keyinfo.Store
+
+	msgBuffer   chan []byte
+	workerCount int
 
 	topicComposer *TopicComposer
 	composeKey    KeyComposerFn
@@ -109,6 +112,7 @@ func NewSession(
 		keyinfoStore:  keyinfoStore,
 		errCh:         errCh,
 		consulKV:      consulKV,
+		msgBuffer:     make(chan []byte, 100), // Buffer for 100 messages
 	}
 }
 
@@ -135,9 +139,8 @@ func (s *session) WaitForReady(ctx context.Context, sessionID string) error {
 
 	// 2) poll until we see everyone
 	total := len(s.party.PartyIDs())
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -149,10 +152,10 @@ func (s *session) WaitForReady(ctx context.Context, sessionID string) error {
 				continue
 			}
 			if len(pairs) >= total {
-				logger.Info("[READY] peers ready", "have", len(pairs), "need", total, "walletID", s.walletID)
+				logger.Debug("[READY] peers ready", "have", len(pairs), "need", total, "walletID", s.walletID)
 				return nil
 			}
-			logger.Info("[READY]  Waiting for peers ready", "wallet", s.walletID, "have", len(pairs), "need", total)
+			logger.Debug("[READY]  Waiting for peers ready", "wallet", s.walletID, "have", len(pairs), "need", total)
 		}
 	}
 }
@@ -210,7 +213,9 @@ func (s *session) Send(msg tss.Message) {
 
 // Listen is a wrapper around the party's Listen method
 // It subscribes to the broadcast and self direct topics
-func (s *session) Listen() {
+func (s *session) Listen(ctx context.Context) {
+	go s.startIncomingMessageWorker(ctx)
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -221,7 +226,13 @@ func (s *session) Listen() {
 		defer wg.Done()
 		sub, err := s.pubSub.Subscribe(broadcastTopic, func(natMsg *nats.Msg) {
 			msg := natMsg.Data
-			go s.receive(msg)
+			select {
+
+			case <-ctx.Done():
+				return
+			default:
+				s.msgBuffer <- msg
+			}
 		})
 
 		if err != nil {
@@ -235,7 +246,12 @@ func (s *session) Listen() {
 	direct := func() {
 		defer wg.Done()
 		sub, err := s.direct.Listen(selfDirectTopic, func(msg []byte) {
-			go s.receive(msg)
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				s.msgBuffer <- msg
+			}
 		})
 
 		if err != nil {
@@ -249,6 +265,20 @@ func (s *session) Listen() {
 	go broadcast()
 	go direct()
 	wg.Wait()
+}
+
+func (s *session) startIncomingMessageWorker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-s.msgBuffer:
+			if !ok {
+				return
+			}
+			s.receive(msg)
+		}
+	}
 }
 
 // SaveKey saves the key to the keyinfo store and the kvstore
@@ -302,9 +332,8 @@ func (s *session) Close() {
 		s.directSub.Unsubscribe()
 	}
 
-	// Close party
-	if s.party != nil {
-		s.party.Close()
+	if s.msgBuffer != nil {
+		close(s.msgBuffer)
 	}
 
 	// Close error channel last

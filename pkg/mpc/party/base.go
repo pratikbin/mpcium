@@ -3,11 +3,12 @@ package party
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math/big"
-	"time"
+	"sync"
 
 	"github.com/bnb-chain/tss-lib/v2/tss"
-	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/fystack/mpcium/pkg/types"
 )
 
@@ -33,7 +34,6 @@ type Party interface {
 	InCh() chan types.TssMessage
 	OutCh() chan tss.Message
 	ErrCh() chan error
-	Close()
 }
 
 type party struct {
@@ -44,12 +44,28 @@ type party struct {
 	inCh      chan types.TssMessage
 	outCh     chan tss.Message
 	errCh     chan error
+
+	ctx       context.Context
+	cancel    context.CancelFunc
+	closeOnce sync.Once
 }
 
-func NewParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, threshold int, errCh chan error) *party {
-	inCh := make(chan types.TssMessage, 1000)
-	outCh := make(chan tss.Message, 1000)
-	return &party{walletID, threshold, partyID, partyIDs, inCh, outCh, errCh}
+func NewParty(
+	walletID string,
+	partyID *tss.PartyID,
+	partyIDs []*tss.PartyID,
+	threshold int,
+	errCh chan error,
+) *party {
+	return &party{
+		walletID:  walletID,
+		threshold: threshold,
+		partyID:   partyID,
+		partyIDs:  partyIDs,
+		inCh:      make(chan types.TssMessage, 1000),
+		outCh:     make(chan tss.Message, 1000),
+		errCh:     errCh,
+	}
 }
 
 func (p *party) WalletID() string {
@@ -64,64 +80,79 @@ func (p *party) PartyIDs() []*tss.PartyID {
 	return p.partyIDs
 }
 
-func (p *party) InCh() chan types.TssMessage {
-	return p.inCh
-}
-
-func (p *party) OutCh() chan tss.Message {
-	return p.outCh
-}
-
-func (p *party) ErrCh() chan error {
-	return p.errCh
-}
-
-func (p *party) Close() {
-	close(p.inCh)
-	close(p.outCh)
-}
+func (p *party) InCh() chan types.TssMessage { return p.inCh }
+func (p *party) OutCh() chan tss.Message     { return p.outCh }
+func (p *party) ErrCh() chan error           { return p.errCh }
 
 // runParty handles the common party execution loop
+// startPartyLoop runs a TSS party, handling messages, errors, and completion.
 func runParty[T any](
 	s Party,
 	ctx context.Context,
 	party tss.Party,
 	send func(tss.Message),
-	endCh chan T,
+	endCh <-chan T,
 	onComplete func([]byte),
 ) {
-	// Start the party in a goroutine to handle errors
-	go func() {
-		start := time.Now()
-		logger.Info("[Starting] party", "walletID", s.WalletID())
-		if err := party.Start(); err != nil {
-			s.ErrCh() <- err
-			return
+	// safe error reporter
+	safeErr := func(err error) {
+		select {
+		case s.ErrCh() <- err:
+		case <-ctx.Done():
 		}
-		elapsed := time.Since(start)
-		logger.Info("[Closing] party", "walletID", s.WalletID(), "elapsed", elapsed.Milliseconds())
+	}
+
+	// start the tss party logic
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				safeErr(fmt.Errorf("panic in party.Start: %v", r))
+			}
+		}()
+		if err := party.Start(); err != nil {
+			safeErr(err)
+		}
 	}()
 
-	// Main message handling loop
+	// main handling loop
 	for {
 		select {
 		case <-ctx.Done():
+			if ctx.Err() != context.Canceled {
+				safeErr(fmt.Errorf("party timed out: %w", ctx.Err()))
+			}
 			return
-		case in := <-s.InCh():
-			ok, err := party.UpdateFromBytes(in.MsgBytes, in.From, in.IsBroadcast)
-			if !ok || err != nil {
-				s.ErrCh() <- err
+
+		case inMsg, ok := <-s.InCh():
+			if !ok {
 				return
 			}
-		case out := <-s.OutCh():
-			send(out)
-		case result := <-endCh:
-			bytes, err := json.Marshal(result)
+			ok2, err := party.UpdateFromBytes(inMsg.MsgBytes, inMsg.From, inMsg.IsBroadcast)
+			if err != nil || !ok2 {
+				safeErr(errors.New("UpdateFromBytes failed"))
+				return
+			}
+
+		case outMsg, ok := <-s.OutCh():
+			if !ok {
+				return
+			}
+			// respect cancellation before invoking callback
+			if ctx.Err() != nil {
+				return
+			}
+			send(outMsg)
+
+		case result, ok := <-endCh:
+			if !ok {
+				return
+			}
+			bts, err := json.Marshal(result)
 			if err != nil {
-				s.ErrCh() <- err
+				safeErr(err)
 				return
 			}
-			onComplete(bytes)
+			onComplete(bts)
 			return
 		}
 	}

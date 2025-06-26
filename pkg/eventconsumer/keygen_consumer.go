@@ -13,9 +13,9 @@ import (
 
 const (
 	// Maximum time to wait for a keygen response.
-	keygenResponseTimeout = 30 * time.Second
+	keygenResponseTimeout = 90 * time.Second
 	// How often to poll for the reply message.
-	keygenPollingInterval = 500 * time.Millisecond
+	keygenPollingInterval = 1 * time.Second
 )
 
 // KeygenConsumer represents a consumer that processes keygen events.
@@ -50,7 +50,18 @@ func (sc *keygenConsumer) Run(ctx context.Context) error {
 	logger.Info("Starting key generation event consumer")
 
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		// Initial fetch
+		logger.Info("Calling to fetch key generation events...")
+		err := sc.keygenRequestQueue.Fetch(5, func(msg jetstream.Msg) error {
+			sc.handleKeygenEvent(msg)
+			return nil
+		})
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			logger.Error("Error fetching key generation events", err)
+		}
+
+		// Then start the ticker
+		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 
 		for {
@@ -62,17 +73,12 @@ func (sc *keygenConsumer) Run(ctx context.Context) error {
 			case <-ticker.C:
 				logger.Info("Calling to fetch key generation events...")
 
-				// No need for a separate fetch context since the fetch operation
-				// is synchronous and completes before we'd cancel it
-				err := sc.keygenRequestQueue.Fetch(2, func(msg jetstream.Msg) error {
+				err := sc.keygenRequestQueue.Fetch(5, func(msg jetstream.Msg) error {
 					sc.handleKeygenEvent(msg)
 					return nil
 				})
-
-				if err != nil {
-					if !errors.Is(err, context.DeadlineExceeded) {
-						logger.Error("Error fetching key generation events", err)
-					}
+				if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+					logger.Error("Error fetching key generation events", err)
 				}
 			}
 		}
@@ -89,28 +95,22 @@ func (sc *keygenConsumer) handleKeygenEvent(msg jetstream.Msg) {
 	replySub, err := sc.natsConn.SubscribeSync(replyInbox)
 	if err != nil {
 		logger.Error("KeygenConsumer: Failed to subscribe to reply inbox", err)
-		_ = msg.Nak()
+		_ = msg.Term()
 		return
 	}
-	defer func() {
-		if err := replySub.Unsubscribe(); err != nil {
-			logger.Warn("KeygenConsumer: Failed to unsubscribe from reply inbox", err)
-		}
-	}()
+	defer replySub.Unsubscribe()
 
 	// Publish the keygen event with the reply inbox.
 	if err := sc.pubsub.PublishWithReply(MPCGenerateEvent, replyInbox, msg.Data()); err != nil {
 		logger.Error("KeygenConsumer: Failed to publish keygen event with reply", err)
-		_ = msg.Nak()
+		_ = msg.Term()
 		return
 	}
 
-	// Poll for the reply message until timeout.
 	deadline := time.Now().Add(keygenResponseTimeout)
 	for time.Now().Before(deadline) {
 		replyMsg, err := replySub.NextMsg(keygenPollingInterval)
 		if err != nil {
-			// If timeout occurs, continue trying.
 			if err == nats.ErrTimeout {
 				continue
 			}
@@ -119,15 +119,18 @@ func (sc *keygenConsumer) handleKeygenEvent(msg jetstream.Msg) {
 		}
 		if replyMsg != nil {
 			logger.Info("KeygenConsumer: Completed keygen event reply received")
-			if ackErr := msg.Ack(); ackErr != nil {
-				logger.Error("KeygenConsumer: ACK failed", ackErr)
+			if err := msg.Ack(); err != nil && !messaging.IsAlreadyAcknowledged(err) {
+				logger.Error("KeygenConsumer: ACK failed", err)
 			}
 			return
 		}
 	}
 
+	// Timeout
 	logger.Warn("KeygenConsumer: Timeout waiting for keygen event response")
-	_ = msg.Nak()
+	if err := msg.Term(); err != nil {
+		logger.Error("KeygenConsumer: Failed to terminate message", err)
+	}
 }
 
 // Close unsubscribes from the JetStream subject and cleans up resources.

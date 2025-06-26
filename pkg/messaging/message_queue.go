@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/fystack/mpcium/pkg/logger"
@@ -163,10 +164,6 @@ func (mq *msgQueue) Close() {
 	}
 }
 
-func (n *msgQueue) handleReconnect(nc *nats.Conn) {
-	logger.Info("NATS: Reconnected to NATS")
-}
-
 func (m *NATsMessageQueueManager) NewMessagePullSubscriber(consumerName string) MessageQueue {
 	mq := &msgQueue{
 		consumerName: consumerName,
@@ -184,7 +181,7 @@ func (m *NATsMessageQueueManager) NewMessagePullSubscriber(consumerName string) 
 		FilterSubjects: []string{
 			consumerWildCard,
 		},
-		MaxDeliver:      3,
+		MaxDeliver:      1,
 		MaxRequestBatch: 10,
 	}
 
@@ -199,14 +196,15 @@ func (m *NATsMessageQueueManager) NewMessagePullSubscriber(consumerName string) 
 }
 
 func (mq *msgQueue) Fetch(batch int, handler func(msg jetstream.Msg) error) error {
-	msgs, err := mq.consumer.Fetch(batch, jetstream.FetchMaxWait(2*time.Minute))
+	// Reduced fetch timeout from 2 minutes to 30 seconds for faster processing
+	msgs, err := mq.consumer.Fetch(batch, jetstream.FetchMaxWait(30*time.Second))
 	if err != nil {
 		return fmt.Errorf("error fetching messages: %w", err)
 	}
 
 	for msg := range msgs.Messages() {
 		meta, _ := msg.Metadata()
-		logger.Debug("Received message", "meta", meta)
+		logger.Debug("Received message", "meta", meta) // Changed to Debug to reduce log noise
 		err := handler(msg)
 		if err != nil {
 			if errors.Is(err, ErrPermament) {
@@ -220,11 +218,16 @@ func (mq *msgQueue) Fetch(batch int, handler func(msg jetstream.Msg) error) erro
 			continue
 		}
 
-		logger.Debug("Message Acknowledged", "subject", msg.Subject)
 		err = msg.Ack()
 		if err != nil {
-			logger.Error("Error acknowledging message: ", err)
+			if !IsAlreadyAcknowledged(err) {
+				logger.Error("Error acknowledging message:", err)
+			}
 		}
 	}
 	return nil
+}
+
+func IsAlreadyAcknowledged(err error) bool {
+	return err != nil && strings.Contains(err.Error(), nats.ErrMsgAlreadyAckd.Error())
 }
