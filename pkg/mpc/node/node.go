@@ -274,7 +274,6 @@ func (n *Node) getECDSAPreParams(isOldParty bool) (*keygen.LocalPreParams, error
 	if err := json.Unmarshal(preparamsBytes, &preparams); err != nil {
 		return nil, err
 	}
-	logger.Info("Preparams loaded", "isOldParty", isOldParty)
 	return &preparams, nil
 }
 

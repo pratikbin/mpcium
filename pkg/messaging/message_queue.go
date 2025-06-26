@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/nats-io/nats.go"
@@ -57,7 +58,7 @@ func NewNATsMessageQueueManager(queueName string, subjectWildCards []string, nc 
 		Name:        queueName,
 		Description: "Stream for " + queueName,
 		Subjects:    subjectWildCards,
-		MaxBytes:    1024,
+		MaxBytes:    100_000_000, // Light Production (Low Traffic) 100_000_000 (100 MB)
 		Storage:     jetstream.FileStorage,
 		Retention:   jetstream.WorkQueuePolicy,
 	})
@@ -81,7 +82,10 @@ func (m *NATsMessageQueueManager) NewMessageQueue(consumerName string) MessageQu
 	cfg := jetstream.ConsumerConfig{
 		Name:          consumerName,
 		Durable:       consumerName,
-		MaxAckPending: 4,
+		MaxAckPending: 1000,
+		// If a message isn't acked within AckWait, it will be redelivered up to MaxDelive
+		AckWait:   60 * time.Second,
+		AckPolicy: jetstream.AckExplicitPolicy,
 		FilterSubjects: []string{
 			consumerWildCard,
 		},

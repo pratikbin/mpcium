@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/bnb-chain/tss-lib/v2/common"
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/resharing"
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
 	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/golang/protobuf/ptypes/any"
 	"google.golang.org/protobuf/proto"
 )
@@ -56,6 +58,7 @@ func (s *ECDSAParty) ClassifyMsg(msgBytes []byte) (uint8, bool, error) {
 	}
 
 	_, isBroadcast := ecdsaBroadcastMessages[msg.TypeUrl]
+	// logger.Info("ClassifyMsg", "typeUrl", msg.TypeUrl, "isBroadcast", isBroadcast)
 
 	round := ecdsaMsgURL2Round[msg.TypeUrl]
 	if round > 4 {
@@ -66,9 +69,18 @@ func (s *ECDSAParty) ClassifyMsg(msgBytes []byte) (uint8, bool, error) {
 
 func (s *ECDSAParty) StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte)) {
 	end := make(chan *keygen.LocalPartySaveData, 1)
+	// Time the initialization of TSS parameters and party
+	initStart := time.Now()
+	initElapsed := time.Since(initStart)
 	params := tss.NewParameters(tss.S256(), tss.NewPeerContext(s.partyIDs), s.partyID, len(s.partyIDs), s.threshold)
 	party := keygen.NewLocalParty(params, s.outCh, end, s.preParams)
+	logger.Info("[Starting ECDSA] key generation", "walletID", s.walletID, "initElapsed", initElapsed.Milliseconds())
+
+	// Time the runParty execution
+	runStart := time.Now()
 	runParty(s, ctx, party, send, end, finish)
+	runElapsed := time.Since(runStart)
+	logger.Info("[Finished ECDSA] key generation run", "walletID", s.walletID, "runElapsed", runElapsed.Milliseconds())
 }
 
 func (s *ECDSAParty) StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte)) {

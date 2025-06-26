@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math/big"
+	"time"
 
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/fystack/mpcium/pkg/logger"
@@ -23,6 +24,7 @@ type Party interface {
 		onComplete func([]byte),
 	)
 
+	WalletID() string
 	PartyID() *tss.PartyID
 	PartyIDs() []*tss.PartyID
 	GetSaveData() []byte
@@ -48,6 +50,10 @@ func NewParty(walletID string, partyID *tss.PartyID, partyIDs []*tss.PartyID, th
 	inCh := make(chan types.TssMessage, 1000)
 	outCh := make(chan tss.Message, 1000)
 	return &party{walletID, threshold, partyID, partyIDs, inCh, outCh, errCh}
+}
+
+func (p *party) WalletID() string {
+	return p.walletID
 }
 
 func (p *party) PartyID() *tss.PartyID {
@@ -86,11 +92,14 @@ func runParty[T any](
 ) {
 	// Start the party in a goroutine to handle errors
 	go func() {
-		logger.Info("Starting party", "partyID", s.PartyID().String())
+		start := time.Now()
+		logger.Info("[Starting] party", "walletID", s.WalletID())
 		if err := party.Start(); err != nil {
 			s.ErrCh() <- err
 			return
 		}
+		elapsed := time.Since(start)
+		logger.Info("[Closing] party", "walletID", s.WalletID(), "elapsed", elapsed.Milliseconds())
 	}()
 
 	// Main message handling loop

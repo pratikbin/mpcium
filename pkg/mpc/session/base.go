@@ -40,9 +40,17 @@ type TopicComposer struct {
 type KeyComposerFn func(id string) string
 
 type Session interface {
-	StartKeygen(ctx context.Context, send func(tss.Message), finish func([]byte))
-	StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), finish func([]byte))
-	StartResharing(ctx context.Context, oldPartyIDs []*tss.PartyID, newPartyIDs []*tss.PartyID, oldThreshold int, newThreshold int, send func(tss.Message), finish func([]byte))
+	StartKeygen(ctx context.Context, send func(tss.Message), onComplete func([]byte))
+	StartSigning(ctx context.Context, msg *big.Int, send func(tss.Message), onComplete func([]byte))
+	StartResharing(
+		ctx context.Context,
+		oldPartyIDs []*tss.PartyID,
+		newPartyIDs []*tss.PartyID,
+		oldThreshold int,
+		newThreshold int,
+		send func(tss.Message),
+		onComplete func([]byte),
+	)
 
 	GetSaveData(version int) ([]byte, error)
 	GetPublicKey(data []byte) ([]byte, error)
@@ -159,11 +167,17 @@ func (s *session) Send(msg tss.Message) {
 // Listen is a wrapper around the party's Listen method
 // It subscribes to the broadcast and self direct topics
 func (s *session) Listen() {
+	var wg sync.WaitGroup
+	wg.Add(2)
+
 	selfDirectTopic := s.topicComposer.ComposeDirectTopic(getRoutingFromPartyID(s.party.PartyID()))
+	broadcastTopic := s.topicComposer.ComposeBroadcastTopic()
+
 	broadcast := func() {
-		sub, err := s.pubSub.Subscribe(s.topicComposer.ComposeBroadcastTopic(), func(natMsg *nats.Msg) {
+		defer wg.Done()
+		sub, err := s.pubSub.Subscribe(broadcastTopic, func(natMsg *nats.Msg) {
 			msg := natMsg.Data
-			s.receive(msg)
+			go s.receive(msg)
 		})
 
 		if err != nil {
@@ -175,8 +189,9 @@ func (s *session) Listen() {
 	}
 
 	direct := func() {
+		defer wg.Done()
 		sub, err := s.direct.Listen(selfDirectTopic, func(msg []byte) {
-			s.receive(msg)
+			go s.receive(msg)
 		})
 
 		if err != nil {
@@ -189,6 +204,7 @@ func (s *session) Listen() {
 
 	go broadcast()
 	go direct()
+	wg.Wait()
 }
 
 // SaveKey saves the key to the keyinfo store and the kvstore
