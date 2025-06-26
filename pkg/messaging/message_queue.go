@@ -18,6 +18,7 @@ var (
 type MessageQueue interface {
 	Enqueue(topic string, message []byte, options *EnqueueOptions) error
 	Dequeue(topic string, handler func(message []byte) error) error
+	Fetch(batch int, handler func(msg jetstream.Msg) error) error
 	Close()
 }
 
@@ -30,6 +31,13 @@ type msgQueue struct {
 	js              jetstream.JetStream
 	consumer        jetstream.Consumer
 	consumerContext jetstream.ConsumeContext
+}
+
+type msgPull struct {
+	consumerName string
+	js           jetstream.JetStream
+	consumer     jetstream.Consumer
+	fetchMaxWait time.Duration
 }
 
 type NATsMessageQueueManager struct {
@@ -157,4 +165,66 @@ func (mq *msgQueue) Close() {
 
 func (n *msgQueue) handleReconnect(nc *nats.Conn) {
 	logger.Info("NATS: Reconnected to NATS")
+}
+
+func (m *NATsMessageQueueManager) NewMessagePullSubscriber(consumerName string) MessageQueue {
+	mq := &msgQueue{
+		consumerName: consumerName,
+		js:           m.js,
+	}
+	consumerWildCard := fmt.Sprintf("%s.%s.*", m.queueName, consumerName)
+	cfg := jetstream.ConsumerConfig{
+		Name:          consumerName,
+		Durable:       consumerName,
+		MaxAckPending: 1000,
+		// If a message isn't acked within AckWait, it will be redelivered up to MaxDelive
+		AckWait:    180 * time.Second,
+		MaxWaiting: 1000,
+		AckPolicy:  jetstream.AckExplicitPolicy,
+		FilterSubjects: []string{
+			consumerWildCard,
+		},
+		MaxDeliver:      3,
+		MaxRequestBatch: 10,
+	}
+
+	logger.Info("Creating pull consumer for subject", "config", cfg)
+	consumer, err := m.js.CreateOrUpdateConsumer(context.Background(), m.queueName, cfg)
+	if err != nil {
+		logger.Fatal("Error creating JetStream consumer: ", err)
+	}
+
+	mq.consumer = consumer
+	return mq
+}
+
+func (mq *msgQueue) Fetch(batch int, handler func(msg jetstream.Msg) error) error {
+	msgs, err := mq.consumer.Fetch(batch, jetstream.FetchMaxWait(2*time.Minute))
+	if err != nil {
+		return fmt.Errorf("error fetching messages: %w", err)
+	}
+
+	for msg := range msgs.Messages() {
+		meta, _ := msg.Metadata()
+		logger.Debug("Received message", "meta", meta)
+		err := handler(msg)
+		if err != nil {
+			if errors.Is(err, ErrPermament) {
+				logger.Info("Permanent error on message", "subject", msg.Subject)
+				msg.Term()
+				continue
+			}
+
+			logger.Error("Error handling message: ", err)
+			msg.Nak()
+			continue
+		}
+
+		logger.Debug("Message Acknowledged", "subject", msg.Subject)
+		err = msg.Ack()
+		if err != nil {
+			logger.Error("Error acknowledging message: ", err)
+		}
+	}
+	return nil
 }

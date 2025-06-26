@@ -135,6 +135,8 @@ func runNode(ctx context.Context, c *cli.Command) error {
 		"mpc.mpc_resharing_success.*",
 	}, natsConn)
 
+	genkeyRequestQueue := mqManager.NewMessagePullSubscriber("mpc_keygen_request")
+	defer genkeyRequestQueue.Close()
 	genKeySuccessQueue := mqManager.NewMessageQueue("mpc_keygen_success")
 	defer genKeySuccessQueue.Close()
 	singingResultQueue := mqManager.NewMessageQueue("signing_result")
@@ -181,6 +183,7 @@ func runNode(ctx context.Context, c *cli.Command) error {
 	timeoutConsumer.Run()
 	defer timeoutConsumer.Close()
 	signingConsumer := eventconsumer.NewSigningConsumer(natsConn, signingStream, pubsub)
+	keygenConsumer := eventconsumer.NewKeygenConsumer(natsConn, genkeyRequestQueue, pubsub)
 
 	// Make the node ready before starting the signing consumer
 	peerRegistry.Ready()
@@ -194,6 +197,11 @@ func runNode(ctx context.Context, c *cli.Command) error {
 		logger.Warn("Shutdown signal received, canceling context...")
 		cancel()
 	}()
+
+	fmt.Print("Run keygen consumer")
+	if err := keygenConsumer.Run(appContext); err != nil {
+		logger.Error("error running keygen consumer:", err)
+	}
 
 	if err := signingConsumer.Run(appContext); err != nil {
 		logger.Error("error running consumer:", err)

@@ -17,7 +17,7 @@ type Subscription interface {
 
 type PubSub interface {
 	Publish(topic string, message []byte) error
-	PublishWithReply(ttopic, reply string, data []byte) error
+	PublishWithReply(topic, reply string, data []byte) error
 	Subscribe(topic string, handler func(msg *nats.Msg)) (Subscription, error)
 }
 

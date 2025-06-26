@@ -29,12 +29,14 @@ const (
 	mpcKeygenSuccessQueue    = "mpc_keygen_success"
 	mpcSigningResultQueue    = "signing_result"
 	mpcResharingSuccessQueue = "mpc_resharing_success"
+	mpcKeygenRequestQueue    = "mpc_keygen_request"
 
 	// NATS subjects
 	mpcSigningRequestSubject   = "mpc.signing_request.*"
 	mpcKeygenSuccessSubject    = "mpc.mpc_keygen_success.*"
 	mpcSigningResultSubject    = "mpc.signing_result.*"
 	mpcResharingSuccessSubject = "mpc.mpc_resharing_success.*"
+	mpcKeygenRequestSubject    = "mpc.mpc_keygen_request.*"
 )
 
 type MPCClient interface {
@@ -54,7 +56,9 @@ type mpcClient struct {
 	genKeySuccessQueue   messaging.MessageQueue
 	signResultQueue      messaging.MessageQueue
 	resharingResultQueue messaging.MessageQueue
-	privKey              ed25519.PrivateKey
+	genKeyRequestQueue   messaging.MessageQueue
+
+	privKey ed25519.PrivateKey
 }
 
 // Options defines configuration options for creating a new MPCClient
@@ -91,6 +95,7 @@ func NewMPCClient(opts Options) MPCClient {
 		genKeySuccessQueue:   manager.NewMessageQueue(mpcKeygenSuccessQueue),
 		signResultQueue:      manager.NewMessageQueue(mpcSigningResultQueue),
 		resharingResultQueue: manager.NewMessageQueue(mpcResharingSuccessQueue),
+		genKeyRequestQueue:   manager.NewMessagePullSubscriber(mpcKeygenRequestQueue),
 		privKey:              privKey,
 	}
 }
@@ -100,6 +105,7 @@ func initMessageQueueManager(natsConn *nats.Conn) *messaging.NATsMessageQueueMan
 		mpcKeygenSuccessSubject,
 		mpcSigningResultSubject,
 		mpcResharingSuccessSubject,
+		mpcKeygenRequestSubject,
 	}, natsConn)
 }
 
@@ -118,7 +124,9 @@ func (c *mpcClient) CreateWallet(walletID string) error {
 		return fmt.Errorf("CreateWallet: marshal error: %w", err)
 	}
 
-	if err := c.pubsub.Publish(eventconsumer.MPCGenerateEvent, bytes); err != nil {
+	if err := c.genKeyRequestQueue.Enqueue(mpcKeygenRequestSubject, bytes, &messaging.EnqueueOptions{
+		IdempotententKey: fmt.Sprintf("%s.%s", eventconsumer.MPCGenerateEvent, walletID),
+	}); err != nil {
 		return fmt.Errorf("CreateWallet: publish error: %w", err)
 	}
 	return nil
