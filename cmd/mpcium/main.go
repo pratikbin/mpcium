@@ -188,7 +188,7 @@ func runNode(ctx context.Context, c *cli.Command) error {
 	// Make the node ready before starting the signing consumer
 	peerRegistry.Ready()
 
-	_, cancel := context.WithCancel(context.Background())
+	shutdownCtx, cancel := context.WithCancel(ctx)
 	// Setup signal handling to cancel context on termination signals.
 	go func() {
 		sigChan := make(chan os.Signal, 1)
@@ -198,7 +198,7 @@ func runNode(ctx context.Context, c *cli.Command) error {
 		cancel()
 	}()
 
-	if err := signingConsumer.Start(ctx); err != nil {
+	if err := signingConsumer.Start(shutdownCtx); err != nil {
 		logger.Fatal("Failed to start signing consumer", err)
 	}
 
