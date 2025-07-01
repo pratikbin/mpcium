@@ -174,10 +174,6 @@ func runNode(ctx context.Context, c *cli.Command) error {
 		singingResultQueue,
 		identityStore,
 	)
-
-	if err := signingConsumer.Start(ctx); err != nil {
-		logger.Fatal("Failed to start signing consumer", err)
-	}
 	defer signingConsumer.Close()
 
 	timeoutConsumer := eventconsumer.NewTimeOutConsumer(
@@ -202,9 +198,9 @@ func runNode(ctx context.Context, c *cli.Command) error {
 		cancel()
 	}()
 
-	// if err := signingConsumer.Run(appContext); err != nil {
-	// 	logger.Error("error running consumer:", err)
-	// }
+	if err := signingConsumer.Start(ctx); err != nil {
+		logger.Fatal("Failed to start signing consumer", err)
+	}
 
 	return nil
 }
