@@ -121,12 +121,14 @@ func runNode(ctx context.Context, c *cli.Command) error {
 	defer natsConn.Close()
 
 	pubsub := messaging.NewNATSPubSub(natsConn)
-	signingStream, err := messaging.NewJetStreamPubSub(natsConn, event.SigningPublisherStream, []string{
+	signingStream := messaging.NewJetStreamPubsubManager(natsConn, event.SigningPublisherStream, []string{
 		event.SigningRequestTopic,
 	})
-	if err != nil {
-		logger.Fatal("Failed to create JetStream PubSub", err)
-	}
+
+	signComsumer := signingStream.RegisterDurablePubsubConsumer(
+		event.SigningConsumerStream,
+		event.SigningRequestEventTopic,
+	)
 
 	directMessaging := messaging.NewNatsDirectMessaging(natsConn)
 	mqManager := messaging.NewNATsMessageQueueManager("mpc", []string{
@@ -160,11 +162,23 @@ func runNode(ctx context.Context, c *cli.Command) error {
 		mpcNode,
 		pubsub,
 		genKeySuccessQueue,
-		singingResultQueue,
 		identityStore,
 	)
 	eventConsumer.Run()
 	defer eventConsumer.Close()
+
+	signingConsumer := eventconsumer.NewSignConsumer(
+		mpcNode,
+		signComsumer,
+		viper.GetInt("mpc_threshold"),
+		singingResultQueue,
+		identityStore,
+	)
+
+	if err := signingConsumer.Start(ctx); err != nil {
+		logger.Fatal("Failed to start signing consumer", err)
+	}
+	defer signingConsumer.Close()
 
 	timeoutConsumer := eventconsumer.NewTimeOutConsumer(
 		natsConn,
@@ -173,12 +187,12 @@ func runNode(ctx context.Context, c *cli.Command) error {
 
 	timeoutConsumer.Run()
 	defer timeoutConsumer.Close()
-	signingConsumer := eventconsumer.NewSigningConsumer(natsConn, signingStream, pubsub)
+	// signingConsumer := eventconsumer.NewSigningConsumer(natsConn, signingStream, pubsub)
 
 	// Make the node ready before starting the signing consumer
 	peerRegistry.Ready()
 
-	appContext, cancel := context.WithCancel(context.Background())
+	_, cancel := context.WithCancel(context.Background())
 	// Setup signal handling to cancel context on termination signals.
 	go func() {
 		sigChan := make(chan os.Signal, 1)
@@ -188,9 +202,9 @@ func runNode(ctx context.Context, c *cli.Command) error {
 		cancel()
 	}()
 
-	if err := signingConsumer.Run(appContext); err != nil {
-		logger.Error("error running consumer:", err)
-	}
+	// if err := signingConsumer.Run(appContext); err != nil {
+	// 	logger.Error("error running consumer:", err)
+	// }
 
 	return nil
 }

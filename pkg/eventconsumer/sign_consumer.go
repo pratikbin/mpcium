@@ -2,143 +2,254 @@ package eventconsumer
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"math/big"
+	"sync"
 	"time"
 
 	"github.com/fystack/mpcium/pkg/event"
+	"github.com/fystack/mpcium/pkg/identity"
 	"github.com/fystack/mpcium/pkg/logger"
 	"github.com/fystack/mpcium/pkg/messaging"
-	"github.com/nats-io/nats.go"
+	"github.com/fystack/mpcium/pkg/mpc"
+	"github.com/fystack/mpcium/pkg/types"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-const (
-	// Maximum time to wait for a signing response.
-	signingResponseTimeout = 30 * time.Second
-	// How often to poll for the reply message.
-	signingPollingInterval = 500 * time.Millisecond
-)
+type signConsumer struct {
+	node          *mpc.Node
+	durablePubsub messaging.DurablePubsub
 
-// SigningConsumer represents a consumer that processes signing events.
-type SigningConsumer interface {
-	// Run starts the consumer and blocks until the provided context is canceled.
-	Run(ctx context.Context) error
-	// Close performs a graceful shutdown of the consumer.
-	Close() error
+	mpcThreshold       int
+	signingResultQueue messaging.MessageQueue
+	signingSub         messaging.Subscription
+	identityStore      identity.Store
+
+	activeSessions map[string]time.Time // Maps "walletID-txID" to creation time
+	sessionsLock   sync.RWMutex
 }
 
-// signingConsumer implements SigningConsumer.
-type signingConsumer struct {
-	natsConn *nats.Conn
-	pubsub   messaging.PubSub
-	jsPubsub messaging.StreamPubsub
-
-	// jsSub holds the JetStream subscription, so it can be cleaned up during Close().
-	jsSub messaging.Subscription
-}
-
-// NewSigningConsumer returns a new instance of SigningConsumer.
-func NewSigningConsumer(natsConn *nats.Conn, jsPubsub messaging.StreamPubsub, pubsub messaging.PubSub) SigningConsumer {
-	return &signingConsumer{
-		natsConn: natsConn,
-		pubsub:   pubsub,
-		jsPubsub: jsPubsub,
+func NewSignConsumer(
+	node *mpc.Node,
+	durablePubsub messaging.DurablePubsub,
+	mpcThreshold int,
+	signingResultQueue messaging.MessageQueue,
+	identityStore identity.Store,
+) *signConsumer {
+	return &signConsumer{
+		node:               node,
+		durablePubsub:      durablePubsub,
+		mpcThreshold:       mpcThreshold,
+		signingResultQueue: signingResultQueue,
+		identityStore:      identityStore,
 	}
 }
 
-// Run subscribes to signing events and processes them until the context is canceled.
-func (sc *signingConsumer) Run(ctx context.Context) error {
-	sub, err := sc.jsPubsub.Subscribe(
-		event.SigningConsumerStream,
-		event.SigningRequestEventTopic,
-		sc.handleSigningEvent,
-	)
+func (sc *signConsumer) Start(ctx context.Context) error {
+	// Subscribe to signing events
+	sub, err := sc.durablePubsub.Subscribe(sc.handleTxSigningEvent)
 	if err != nil {
-		return fmt.Errorf("failed to subscribe to signing events: %w", err)
+		return err
 	}
-	sc.jsSub = sub
+	sc.signingSub = sub
+
 	logger.Info("SigningConsumer: Subscribed to signing events")
 
 	// Block until context cancellation.
 	<-ctx.Done()
-
-	// When context is canceled, close subscription.
-	return sc.Close()
+	return nil
 }
 
-// The handleSigningEvent function in sign_consumer.go acts as a bridge between the JetStream-based event queue and the MPC (Multi-Party Computation) signing system
-// Creates a reply channel: It generates a unique inbox address using nats.NewInbox() to receive the signing response.
-// Sets up response handling: It creates a synchronous subscription to listen for replies on this inbox.
-// Forwards the signing request: It publishes the original signing event data to the MPCSigningEventTopic with the reply inbox attached, which triggers the MPC signing process.
-// Polls for completion: It enters a polling loop that checks for a reply message, continuing until either:
-// A reply is received (successful signing)
-// An error occurs (failed signing)
-// The timeout is reached (30 seconds)
-// Completes the transaction: It either acknowledges (Ack) the message if signing was successful or negatively acknowledges (Nak) it if there was a timeout or error.
-// MPC Session Interaction
-// The signing consumer doesn't directly interact with MPC sessions. Instead:
-// It publishes the signing request to the MPCSigningEventTopic, which is consumed by the eventconsumer.consumeTxSigningEvent handler.
-// This handler creates the appropriate signing session (SigningSession for ECDSA or EDDSASigningSession for EdDSA) via the MPC node's creation methods.
-// The MPC signing sessions manage the distributed cryptographic operations across multiple nodes, handling message routing, party updates, and signature verification.
-// When signing completes, the session publishes the result to a queue and calls the onSuccess callback, which sends a reply to the inbox that the SigningConsumer is monitoring.
-// The reply signals completion, allowing the SigningConsumer to acknowledge the original message.
-func (sc *signingConsumer) handleSigningEvent(msg jetstream.Msg) {
-	// Create a reply inbox to receive the signing event response.
-	replyInbox := nats.NewInbox()
+func (sc *signConsumer) Close() {
+	if sc.signingSub != nil {
+		err := sc.signingSub.Unsubscribe()
+		if err != nil {
+			logger.Error("Failed to unsubscribe from signing events", err)
+		}
+	}
 
-	// Use a synchronous subscription for the reply inbox.
-	replySub, err := sc.natsConn.SubscribeSync(replyInbox)
+	sc.sessionsLock.Lock()
+	defer sc.sessionsLock.Unlock()
+	sc.activeSessions = make(map[string]time.Time)
+	logger.Info("SigningConsumer: Closed and unsubscribed from signing events")
+}
+
+func (sc *signConsumer) handleTxSigningEvent(jsMsg jetstream.Msg) {
+	raw := jsMsg.Data()
+	var msg types.SignTxMessage
+	err := json.Unmarshal(raw, &msg)
 	if err != nil {
-		logger.Error("SigningConsumer: Failed to subscribe to reply inbox", err)
-		_ = msg.Nak()
+		logger.Error("Failed to unmarshal signing message", err)
+		jsMsg.Ack()
 		return
 	}
-	defer func() {
-		if err := replySub.Unsubscribe(); err != nil {
-			logger.Warn("SigningConsumer: Failed to unsubscribe from reply inbox", err)
+
+	err = sc.identityStore.VerifyInitiatorMessage(&msg)
+	if err != nil {
+		logger.Error("Failed to verify initiator message", err)
+		jsMsg.Nak()
+		return
+	}
+
+	logger.Info(
+		"Rsceived signing event",
+		"waleltID",
+		msg.WalletID,
+		"type",
+		msg.KeyType,
+		"tx",
+		msg.TxID,
+		"Id",
+		sc.node.ID(),
+	)
+
+	// Chsck for duplicate session and track if new
+	if sc.checkDuplicateSession(msg.WalletID, msg.TxID) {
+		jsMsg.Term()
+		return
+	}
+
+	var session mpc.ISigningSession
+	switch msg.KeyType {
+	case types.KeyTypeSecp256k1:
+		session, err = sc.node.CreateSigningSession(
+			msg.WalletID,
+			msg.TxID,
+			msg.NetworkInternalCode,
+			sc.mpcThreshold,
+			sc.signingResultQueue,
+		)
+	case types.KeyTypeEd25519:
+		session, err = sc.node.CreateEDDSASigningSession(
+			msg.WalletID,
+			msg.TxID,
+			msg.NetworkInternalCode,
+			sc.mpcThreshold,
+			sc.signingResultQueue,
+		)
+
+	}
+
+	if err != nil {
+		sc.handleSigningSessionError(
+			msg.WalletID,
+			msg.TxID,
+			msg.NetworkInternalCode,
+			err,
+			"Failed to create signing session",
+			jsMsg,
+		)
+		return
+	}
+
+	txBigInt := new(big.Int).SetBytes(msg.Tx)
+	err = session.Init(txBigInt)
+	if err != nil {
+		if errors.Is(err, mpc.ErrNotEnoughParticipants) {
+			logger.Info("RETRY LATER: Not enough participants to sign")
+			//Return for retry later
+			return
+		}
+		sc.handleSigningSessionError(
+			msg.WalletID,
+			msg.TxID,
+			msg.NetworkInternalCode,
+			err,
+			"Failed to init signing session",
+			jsMsg,
+		)
+		return
+	}
+
+	// Mark session as already processed
+	sc.addSession(msg.WalletID, msg.TxID)
+
+	ctx, done := context.WithCancel(context.Background())
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case err := <-session.ErrChan():
+				if err != nil {
+					sc.handleSigningSessionError(
+						msg.WalletID,
+						msg.TxID,
+						msg.NetworkInternalCode,
+						err,
+						"Failed to sign tx",
+						jsMsg,
+					)
+					return
+				}
+			}
 		}
 	}()
 
-	// Publish the signing event with the reply inbox.
-	if err := sc.pubsub.PublishWithReply(event.MPCSigningEventTopic, replyInbox, msg.Data()); err != nil {
-		logger.Error("SigningConsumer: Failed to publish signing event with reply", err)
-		_ = msg.Nak()
+	session.ListenToIncomingMessageAsync()
+	// TODO: use consul distributed lock here, only sign after all nodes has already completed listing to incoming message async
+	// The purpose of the sleep is to be ensuring that the node has properly set up its message listeners
+	// before it starts the signing process. If the signing process starts sending messages before other nodes
+	// have set up their listeners, those messages might be missed, potentially causing the signing process to fail.
+	// One solution:
+	// The messaging includes mschanisms for dirsct point-to-point communication (in point2point.go).
+	// The nodes could explicitly coordinate through request-response patterns before starting signing
+	time.Sleep(1 * time.Second)
+
+	onSuccess := func(data []byte) {
+		done()
+		jsMsg.Ack()
+	}
+	go session.Sign(onSuccess)
+}
+
+func (sc *signConsumer) handleSigningSessionError(walletID, txID, NetworkInternalCode string, err error, errMsg string, jsMsg jetstream.Msg) {
+	logger.Error("Signing session error", err, "walletID", walletID, "txID", txID, "error", errMsg)
+	signingResult := event.SigningResultEvent{
+		ResultType:          event.SigningResultTypeError,
+		NetworkInternalCode: NetworkInternalCode,
+		WalletID:            walletID,
+		TxID:                txID,
+		ErrorReason:         errMsg,
+	}
+
+	signingResultBytes, err := json.Marshal(signingResult)
+	if err != nil {
+		logger.Error("Failed to marshal signing result event", err)
 		return
 	}
 
-	// Poll for the reply message until timeout.
-	deadline := time.Now().Add(signingResponseTimeout)
-	for time.Now().Before(deadline) {
-		replyMsg, err := replySub.NextMsg(signingPollingInterval)
-		if err != nil {
-			// If timeout occurs, continue trying.
-			if err == nats.ErrTimeout {
-				continue
-			}
-			logger.Error("SigningConsumer: Error receiving reply message", err)
-			break
-		}
-		if replyMsg != nil {
-			logger.Info("SigningConsumer: Completed signing event; reply received")
-			if ackErr := msg.Ack(); ackErr != nil {
-				logger.Error("SigningConsumer: ACK failed", ackErr)
-			}
-			return
-		}
+	jsMsg.Ack()
+	err = sc.signingResultQueue.Enqueue(event.SigningResultCompleteTopic, signingResultBytes, &messaging.EnqueueOptions{
+		IdempotententKey: txID,
+	})
+	if err != nil {
+		logger.Error("Failed to publish signing result event", err)
+		return
 	}
-
-	logger.Warn("SigningConsumer: Timeout waiting for signing event response")
-	_ = msg.Nak()
 }
 
-// Close unsubscribes from the JetStream subject and cleans up resources.
-func (sc *signingConsumer) Close() error {
-	if sc.jsSub != nil {
-		if err := sc.jsSub.Unsubscribe(); err != nil {
-			logger.Error("SigningConsumer: Failed to unsubscribe from JetStream", err)
-			return err
-		}
-		logger.Info("SigningConsumer: Unsubscribed from JetStream")
+func (sc *signConsumer) checkDuplicateSession(walletID, txID string) bool {
+	sessionID := fmt.Sprintf("%s-%s", walletID, txID)
+
+	// Check for duplicate
+	sc.sessionsLock.RLock()
+	_, isDuplicate := sc.activeSessions[sessionID]
+	sc.sessionsLock.RUnlock()
+
+	if isDuplicate {
+		logger.Info("Duplicate signing request detected", "walletID", walletID, "txID", txID)
+		return true
 	}
-	return nil
+
+	return false
+}
+
+func (sc *signConsumer) addSession(walletID, txID string) {
+	sessionID := fmt.Sprintf("%s-%s", walletID, txID)
+	sc.sessionsLock.Lock()
+	sc.activeSessions[sessionID] = time.Now()
+	sc.sessionsLock.Unlock()
 }
