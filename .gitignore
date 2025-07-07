@@ -2,6 +2,9 @@ db/
 tmp/
 bin/
 identity/
+node0/
+node1/
+node2/
 event_initiator.identity.json
 event_initiator.key
 event_initiator.key.age
