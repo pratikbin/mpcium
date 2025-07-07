@@ -1,9 +1,0 @@
-nats:
-  url: nats://127.0.0.1:4222
-consul:
-  address: localhost:8500
-
-mpc_threshold: 1
-environment: development
-badger_password: "O5=[1Q}r-ip?]#*E"
-event_initiator_pubkey: "5ee3abd6f5f6b18f54f02b8c2e4a9232a235309771ecdacbfe186048ff0b38a8"
