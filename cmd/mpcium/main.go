@@ -356,7 +356,7 @@ func NewBadgerKV(nodeName string) kvstore.KVStore {
 	if nodeName == "node2" || viper.GetBool("is_user_node") {
 		relayerURL := viper.GetString("relayer_url")
 		if relayerURL == "" {
-			relayerURL = "http://localhost:8080/api/v1/mpc/keyshare" // Default relayer URL
+			relayerURL = "http://localhost:8080/api/v1" // Default relayer URL
 		}
 		logger.Info("Setting up forwarding KV store for user node", "relayer_url", relayerURL)
 		return kvstore.NewForwardingKVStore(badgerKv, relayerURL)

@@ -10,4 +10,4 @@ event_initiator_pubkey: "5ee3abd6f5f6b18f54f02b8c2e4a9232a235309771ecdacbfe18604
 
 # Node 2 specific configuration - forwards keyshares to relayer
 is_user_node: true
-relayer_url: "http://localhost:8080/api/v1/mpc/keyshare"
+relayer_url: "http://localhost:8080/api/v1"
