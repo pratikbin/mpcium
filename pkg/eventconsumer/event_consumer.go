@@ -230,7 +230,7 @@ func (ec *eventConsumer) handleKeyGenEvent(natMsg *nats.Msg) {
 		ec.handleKeygenSessionError(walletID, err, "Failed to publish key generation success message", natMsg)
 		return
 	}
-	ec.sendReplyToRemoveMsg(natMsg)
+	ec.sendReplyToRemoveMsg(natMsg, payload)
 	logger.Info("[COMPLETED KEY GEN] Key generation completed successfully", "walletID", walletID)
 }
 
@@ -271,7 +271,7 @@ func (ec *eventConsumer) handleKeygenSessionError(walletID string, err error, co
 			"payload", string(keygenResultBytes),
 		)
 	}
-	ec.sendReplyToRemoveMsg(natMsg)
+	ec.sendReplyToRemoveMsg(natMsg, keygenResultBytes)
 }
 
 func (ec *eventConsumer) startKeyGenEventWorker() {
@@ -431,7 +431,7 @@ func (ec *eventConsumer) consumeTxSigningEvent() error {
 
 		onSuccess := func(data []byte) {
 			done()
-			ec.sendReplyToRemoveMsg(natMsg)
+			ec.sendReplyToRemoveMsg(natMsg, data)
 		}
 		go session.Sign(onSuccess)
 	})
@@ -483,18 +483,16 @@ func (ec *eventConsumer) handleSigningSessionError(walletID, txID, networkIntern
 			"payload", string(signingResultBytes),
 		)
 	}
-	ec.sendReplyToRemoveMsg(natMsg)
+	ec.sendReplyToRemoveMsg(natMsg, signingResultBytes)
 }
 
-func (ec *eventConsumer) sendReplyToRemoveMsg(natMsg *nats.Msg) {
-	msg := natMsg.Data
-
+func (ec *eventConsumer) sendReplyToRemoveMsg(natMsg *nats.Msg, responseData []byte) {
 	if natMsg.Reply == "" {
-		logger.Warn("No reply inbox specified for sign success message", "msg", string(msg))
+		logger.Warn("No reply inbox specified for message", "msg", string(natMsg.Data))
 		return
 	}
 
-	err := ec.pubsub.Publish(natMsg.Reply, msg)
+	err := ec.pubsub.Publish(natMsg.Reply, responseData)
 	if err != nil {
 		logger.Error("Failed to reply message", err, "reply", natMsg.Reply)
 		return
