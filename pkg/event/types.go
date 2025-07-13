@@ -51,10 +51,11 @@ const (
 	ErrorCodeMsgValidation    ErrorCode = "ERROR_MSG_VALIDATION"
 
 	// Cryptographic operation errors
-	ErrorCodeSignatureGeneration   ErrorCode = "ERROR_SIGNATURE_GENERATION"
-	ErrorCodeSignatureVerification ErrorCode = "ERROR_SIGNATURE_VERIFICATION"
-	ErrorCodePreParamsGeneration   ErrorCode = "ERROR_PRE_PARAMS_GENERATION"
-	ErrorCodeTSSPartyCreation      ErrorCode = "ERROR_TSS_PARTY_CREATION"
+	ErrorCodeSignatureGeneration       ErrorCode = "ERROR_SIGNATURE_GENERATION"
+	ErrorCodeSignatureVerification     ErrorCode = "ERROR_SIGNATURE_VERIFICATION"
+	ErrorCodeInvalidInitiatorSignature ErrorCode = "ERROR_INVALID_INITIATOR_SIGNATURE"
+	ErrorCodePreParamsGeneration       ErrorCode = "ERROR_PRE_PARAMS_GENERATION"
+	ErrorCodeTSSPartyCreation          ErrorCode = "ERROR_TSS_PARTY_CREATION"
 
 	// Data serialization errors
 	ErrorCodeMarshalFailure   ErrorCode = "ERROR_MARSHAL_FAILURE"
@@ -134,6 +135,8 @@ func GetErrorCodeFromError(err error) ErrorCode {
 		return ErrorCodeMessageDelivery
 	case contains(errStr, "context", "cancelled"):
 		return ErrorCodeContextCancelled
+	case contains(errStr, "invalid signature from initiator"):
+		return ErrorCodeInvalidInitiatorSignature
 	default:
 		return ErrorCodeUnknown
 	}

@@ -95,7 +95,7 @@ func (sc *signingConsumer) Run(ctx context.Context) error {
 	sub, err := sc.jsBroker.CreateSubscription(
 		ctx,
 		event.SigningConsumerStream,
-		event.SigningRequestEventTopic,
+		event.SigningRequestTopic,
 		sc.handleSigningEvent,
 	)
 	if err != nil {

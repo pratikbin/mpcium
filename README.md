@@ -31,10 +31,9 @@ At its cryptographic core, Mpcium integrates tss-lib, a production-grade thresho
 ## Resources
 
 - **MPC nodes architecture**: [MPC Fundamental and MPCIUM architecture](https://deepwiki.com/fystack/mpcium)
-- **MPC clients**: 
+- **MPC clients**:
   - [TypeScript Client](https://github.com/fystack/mpcium-client-ts)
   - [Golang Client](https://github.com/fystack/mpcium/blob/master/pkg/client/client.go)
-
 
 ![All node ready](images/all-node-ready.png)
 
@@ -164,13 +163,17 @@ func main () {
 ```
 
 ### Testing
+
 ## 1. Unit tests
+
 ```
 go test ./... -v
 ```
 
 ## 2. Integration tests
+
 ```
 cd e2e
 make test
 ```
+

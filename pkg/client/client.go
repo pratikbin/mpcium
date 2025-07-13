@@ -235,7 +235,7 @@ func (c *mpcClient) SignTransaction(msg *types.SignTxMessage) error {
 		return fmt.Errorf("SignTransaction: marshal error: %w", err)
 	}
 
-	if err := c.signingBroker.PublishMessage(context.Background(), event.SigningRequestEventTopic, bytes); err != nil {
+	if err := c.signingBroker.PublishMessage(context.Background(), event.SigningRequestTopic, bytes); err != nil {
 		return fmt.Errorf("SignTransaction: publish error: %w", err)
 	}
 	return nil
